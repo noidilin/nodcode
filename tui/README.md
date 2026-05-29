@@ -194,7 +194,23 @@ bun run dev:server
 
 The API runs on `http://localhost:3000`.
 
-### 7. Run the CLI
+### 7. Build and smoke test the API container
+
+Build the Bun/Hono API image from the workspace root:
+
+```bash
+docker build -f Dockerfile -t nodcode-api:local .
+```
+
+Run a production-like health-check smoke test. The script builds the image, starts it with non-secret placeholder configuration, polls `/health`, and removes the container on exit:
+
+```bash
+bun run docker:smoke:server
+```
+
+The image listens on `PORT` (default `3000`), binds to `HOST=0.0.0.0`, logs to standard streams, and uses Bun's high `idleTimeout` runtime path for long AI streaming responses.
+
+### 8. Run the CLI
 
 In another terminal:
 
@@ -233,6 +249,9 @@ packages/
 |---------|-------------|
 | `bun run dev:cli` | Start the CLI in watch mode |
 | `bun run dev:server` | Start the Hono server with hot reload |
+| `bun run build:server` | Build the server bundle |
+| `bun run docker:build:server` | Build the API Docker image as `nodcode-api:local` |
+| `bun run docker:smoke:server` | Build, run, and health-check the API container |
 | `bun run build:cli` | Build the CLI package |
 | `bun run link:cli` | Build and link the `nodcode` executable |
 | `bun run --cwd packages/database db:generate` | Generate the Prisma client |

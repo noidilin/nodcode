@@ -8,7 +8,10 @@
     "test:server": "bun run --filter @nodcode/server test",
     "test:cli": "bun run --filter @nodcode/cli test",
     "test:httpapi": "bun run --filter @nodcode/server test:httpapi",
+    "build:server": "bun run --filter @nodcode/server build",
     "build:cli": "bun run --filter @nodcode/cli build",
+    "docker:build:server": "docker build -f Dockerfile -t nodcode-api:local .",
+    "docker:smoke:server": "packages/server/script/container-smoke.sh",
     "link:cli": "bun run build:cli && cd packages/cli && bun link"
   },
   "dependencies": {

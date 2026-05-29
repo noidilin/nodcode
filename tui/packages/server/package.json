@@ -10,6 +10,7 @@
     "test": "bun test",
     "test:httpapi": "bun run script/httpapi-exercise.ts --mode=coverage --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode=auth --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode=effect --fail-on-missing --fail-on-skip",
     "build": "bun build src/index.ts --outdir dist --target bun",
+    "build:container": "bun build src/container.ts --outdir dist --target bun",
     "postinstall": "bun run --cwd ../database db:generate"
   },
   "dependencies": {
