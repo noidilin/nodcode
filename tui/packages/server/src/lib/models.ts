@@ -1,5 +1,7 @@
+import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
+import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import {
   findSupportedChatModel,
   type SupportedChatModel,
@@ -8,16 +10,19 @@ import {
 } from "@nodcode/shared";
 import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import type { LanguageModel } from "ai";
+import { getRuntimeConfig } from "../config";
 
 type AnthropicModelId = Extract<SupportedChatModel, { provider: "anthropic" }>["id"];
 type OpenAIModelId = Extract<SupportedChatModel, { provider: "openai" }>["id"];
-type GeminiModelId = Extract<SupportedChatModel, { provider: "google" }>["id"];
+type BedrockModel = Extract<SupportedChatModel, { provider: "bedrock" }>;
 
 export type ResolvedModel = {
   model: LanguageModel;
   provider: SupportedProvider;
   modelId: SupportedChatModelId;
   providerOptions?: ProviderOptions;
+  region?: string;
+  providerModelId?: string;
 };
 
 const ANTHROPIC_PROVIDER_OPTIONS: Partial<Record<AnthropicModelId, ProviderOptions>> = {
@@ -71,6 +76,37 @@ function resolveOpenAIModel(modelId: OpenAIModelId): ResolvedModel {
   };
 };
 
+function resolveBedrockModel(model: BedrockModel): ResolvedModel {
+  const config = getRuntimeConfig();
+  const providerModelId = config.BEDROCK_CHAT_MODEL_ID;
+  const region = config.BEDROCK_AWS_REGION;
+
+  if (region !== model.region) {
+    throw new Error(
+      `Configured Bedrock region ${region} does not match supported catalog region ${model.region} for ${model.id}`,
+    );
+  }
+
+  if (providerModelId !== model.underlyingModelId) {
+    throw new Error(
+      `Configured Bedrock model ${providerModelId} does not match supported catalog model ${model.underlyingModelId}`,
+    );
+  }
+
+  const bedrock = createAmazonBedrock({
+    region,
+    credentialProvider: fromNodeProviderChain(),
+  });
+
+  return {
+    model: bedrock(providerModelId),
+    provider: "bedrock",
+    modelId: model.id,
+    region,
+    providerModelId,
+  };
+};
+
 function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
   const provider = model.provider;
 
@@ -79,6 +115,8 @@ function resolveSupportedChatModel(model: SupportedChatModel): ResolvedModel {
       return resolveAnthropicModel(model.id);
     case "openai":
       return resolveOpenAIModel(model.id);
+    case "bedrock":
+      return resolveBedrockModel(model);
     default:
       return assertUnsupportedProvider(provider);
   }

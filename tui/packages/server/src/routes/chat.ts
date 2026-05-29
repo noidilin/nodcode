@@ -3,7 +3,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import {
   convertToModelMessages,
-  streamText,
+  streamText as aiStreamText,
   validateUIMessages,
   type InferUITools,
   type LanguageModelUsage,
@@ -19,17 +19,33 @@ import {
 } from "@nodcode/shared";
 import { buildSystemPrompt } from "../system-prompt";
 import type { AuthenticatedEnv } from "../middleware/require-auth";
-import { requireCreditsBalance } from "../middleware/require-credits-balance";
+import { createRequireCreditsBalance, type GetCreditsBalance } from "../middleware/require-credits-balance";
 import { calculateCreditsForUsage } from "../lib/credits";
-import { ingestAiUsage } from "../lib/polar";
+import { ingestAiUsage as ingestPolarAiUsage } from "../lib/polar";
 import { isSupportedChatModel, resolveChatModel } from "../lib/models";
 import { logger } from "../logger";
+
+type ChatDatabase = Pick<typeof db, "session">;
+
+export type ChatStreamText = (options: Parameters<typeof aiStreamText>[0]) => ReturnType<typeof aiStreamText>;
+export type IngestAiUsage = typeof ingestPolarAiUsage;
+
+type ChatRouteDependencies = {
+  database?: ChatDatabase;
+  getCreditsBalance?: GetCreditsBalance;
+  streamText?: ChatStreamText;
+  ingestAiUsage?: IngestAiUsage;
+};
 
 type ChatMessageMetadata = {
   mode?: ModeType;
   model?: string;
+  provider?: string;
+  providerModelId?: string;
+  region?: string;
   durationMs?: number;
   usage?: LanguageModelUsage;
+  providerMetadata?: unknown;
 };
 
 type NodcodeUIMessage = UIMessage<ChatMessageMetadata, never, InferUITools<ToolContracts>>;
@@ -64,121 +80,144 @@ function hasPendingToolCalls(message: NodcodeUIMessage) {
   });
 };
 
-const app = new Hono<AuthenticatedEnv>()
-  .post(
-    "/",
-    requireCreditsBalance,
-    submitValidator,
-    async (c) => {
-      const userId = c.get("userId");
-      const { id, messages, mode, model } = c.req.valid("json");
+export function createChatRoutes(dependencies: ChatRouteDependencies = {}) {
+  const database = dependencies.database ?? db;
+  const streamText = dependencies.streamText ?? aiStreamText;
+  const ingestAiUsage = dependencies.ingestAiUsage ?? ingestPolarAiUsage;
+  const requireCreditsBalance = createRequireCreditsBalance(dependencies.getCreditsBalance);
 
-      const session = await db.session.findUnique({
-        where: { id, userId },
-      });
+  return new Hono<AuthenticatedEnv>()
+    .post(
+      "/",
+      requireCreditsBalance,
+      submitValidator,
+      async (c) => {
+        const userId = c.get("userId");
+        const { id, messages, mode, model } = c.req.valid("json");
 
-      if (!session) {
-        return c.json({ error: "Session not found" }, 404);
-      }
+        const session = await database.session.findUnique({
+          where: { id, userId },
+        });
 
-      const startTime = Date.now();
-      const tools = getToolContracts(mode);
-      const resolvedModel = resolveChatModel(model);
-      const previousMessages = Array.isArray(session.messages)
-        ? (session.messages as unknown as NodcodeUIMessage[])
-        : [];
-      const mergedMessages = [...previousMessages];
-      
-      for (const message of messages) {
-        const incomingMessage = {
-          ...message,
-          metadata: { ...message.metadata, mode, model },
-        } satisfies NodcodeUIMessage;
-
-        const existingMessageIndex = mergedMessages.findIndex((m) => m.id === incomingMessage.id);
-
-        if (existingMessageIndex === -1) {
-          mergedMessages.push(incomingMessage);
-        } else {
-          mergedMessages[existingMessageIndex] = incomingMessage;
+        if (!session) {
+          return c.json({ error: "Session not found" }, 404);
         }
-      }
 
-      const nextMessages = await validateUIMessages<NodcodeUIMessage>({
-        messages: mergedMessages,
-        tools,
-      });
-      const modelMessages = await convertToModelMessages(nextMessages, { tools });
-      let completedUsage: LanguageModelUsage | null = null;
+        const startTime = Date.now();
+        const tools = getToolContracts(mode);
+        const resolvedModel = resolveChatModel(model);
+        const previousMessages = Array.isArray(session.messages)
+          ? (session.messages as unknown as NodcodeUIMessage[])
+          : [];
+        const mergedMessages = [...previousMessages];
+        
+        for (const message of messages) {
+          const incomingMessage = {
+            ...message,
+            metadata: { ...message.metadata, mode, model },
+          } satisfies NodcodeUIMessage;
 
-      const result = streamText({
-        model: resolvedModel.model,
-        system: buildSystemPrompt({ mode }),
-        messages: modelMessages,
-        tools,
-        providerOptions: resolvedModel.providerOptions,
-        onFinish(event) {
-          completedUsage = event.totalUsage;
-        },
-      });
+          const existingMessageIndex = mergedMessages.findIndex((m) => m.id === incomingMessage.id);
 
-      return result.toUIMessageStreamResponse<NodcodeUIMessage>({
-        originalMessages: nextMessages,
-        messageMetadata({ part }) {
-          if (part.type === "start") {
-            return { mode, model };
+          if (existingMessageIndex === -1) {
+            mergedMessages.push(incomingMessage);
+          } else {
+            mergedMessages[existingMessageIndex] = incomingMessage;
           }
+        }
 
-          if (part.type !== "finish") return undefined;
+        const nextMessages = await validateUIMessages<NodcodeUIMessage>({
+          messages: mergedMessages,
+          tools,
+        });
+        const modelMessages = await convertToModelMessages(nextMessages, { tools });
+        let completedUsage: LanguageModelUsage | null = null;
+        let completedProviderMetadata: unknown;
 
-          return {
-            mode,
-            model,
-            durationMs: Date.now() - startTime,
-            ...(completedUsage ? { usage: completedUsage } : {}),
-          };
-        },
-        async onFinish(event) {
-          if (event.isAborted) return;
+        const result = streamText({
+          model: resolvedModel.model,
+          system: buildSystemPrompt({ mode }),
+          messages: modelMessages,
+          tools,
+          providerOptions: resolvedModel.providerOptions,
+          onFinish(event) {
+            completedUsage = event.totalUsage;
+            completedProviderMetadata = event.providerMetadata;
+          },
+        });
 
-          if (hasPendingToolCalls(event.responseMessage)) return;
+        return result.toUIMessageStreamResponse<NodcodeUIMessage>({
+          originalMessages: nextMessages,
+          messageMetadata({ part }) {
+            if (part.type === "start") {
+              return {
+                mode,
+                model,
+                provider: resolvedModel.provider,
+                ...(resolvedModel.providerModelId
+                  ? { providerModelId: resolvedModel.providerModelId }
+                  : {}),
+                ...(resolvedModel.region ? { region: resolvedModel.region } : {}),
+              };
+            }
 
-          await db.session.update({
-            where: { id, userId },
-            data: {
-              messages: event.messages as unknown as Prisma.InputJsonValue,
-            },
-          });
+            if (part.type !== "finish") return undefined;
 
-          if (!completedUsage) return;
-
-          try {
-            const billableUsage = calculateCreditsForUsage({
+            return {
+              mode,
+              model,
               provider: resolvedModel.provider,
-              model: resolvedModel.modelId,
-              usage: completedUsage,
+              ...(resolvedModel.providerModelId
+                ? { providerModelId: resolvedModel.providerModelId }
+                : {}),
+              ...(resolvedModel.region ? { region: resolvedModel.region } : {}),
+              durationMs: Date.now() - startTime,
+              ...(completedUsage ? { usage: completedUsage } : {}),
+              ...(completedProviderMetadata ? { providerMetadata: completedProviderMetadata } : {}),
+            };
+          },
+          async onFinish(event) {
+            if (event.isAborted) return;
+
+            if (hasPendingToolCalls(event.responseMessage)) return;
+
+            await database.session.update({
+              where: { id, userId },
+              data: {
+                messages: event.messages as unknown as Prisma.InputJsonValue,
+              },
             });
 
-            await ingestAiUsage({
-              externalCustomerId: userId,
-              eventId: `chat-message:${event.responseMessage.id}`,
-              credits: billableUsage.credits,
-            });
-          } catch (error) {
-            console.error("Failed to ingest Polar AI usage for chat message", {
-              error,
-              sessionId: id,
-              messageId: event.responseMessage.id,
-              userId,
-            });
-          }
-        },
-        onError(error) {
-          logger.error("Chat stream failed", { error, sessionId: id, userId });
-          return "Chat response failed";
-        },
-      });
-    },
-  );
+            if (!completedUsage) return;
 
-export default app;
+            try {
+              const billableUsage = calculateCreditsForUsage({
+                provider: resolvedModel.provider,
+                model: resolvedModel.modelId,
+                usage: completedUsage,
+              });
+
+              await ingestAiUsage({
+                externalCustomerId: userId,
+                eventId: `chat-message:${event.responseMessage.id}`,
+                credits: billableUsage.credits,
+              });
+            } catch (error) {
+              console.error("Failed to ingest Polar AI usage for chat message", {
+                error,
+                sessionId: id,
+                messageId: event.responseMessage.id,
+                userId,
+              });
+            }
+          },
+          onError(error) {
+            logger.error("Chat stream failed", { error, sessionId: id, userId });
+            return "Chat response failed";
+          },
+        });
+      },
+    );
+}
+
+export default createChatRoutes();

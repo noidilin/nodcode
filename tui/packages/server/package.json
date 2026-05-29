@@ -8,12 +8,15 @@
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "test": "bun test",
+    "test:httpapi": "bun run script/httpapi-exercise.ts --mode=coverage --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode=auth --fail-on-missing --fail-on-skip && bun run script/httpapi-exercise.ts --mode=effect --fail-on-missing --fail-on-skip",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "postinstall": "bun run --cwd ../database db:generate"
   },
   "dependencies": {
+    "@ai-sdk/amazon-bedrock": "^4.0.111",
     "@ai-sdk/anthropic": "^3.0.68",
     "@ai-sdk/openai": "^3.0.52",
+    "@aws-sdk/credential-providers": "^3.1056.0",
     "@clerk/backend": "^3.2.8",
     "@hono/zod-validator": "^0.7.6",
     "@nodcode/database": "workspace:*",

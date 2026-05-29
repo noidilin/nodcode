@@ -3,15 +3,27 @@ export type ModelPricing = {
   outputUsdPerMillionTokens: number;
 };
 
-export type SupportedProvider = "anthropic" | "openai";
+export type SupportedProvider = "anthropic" | "openai" | "bedrock";
 
 type SupportedChatModelDefinition = {
   id: string;
   provider: SupportedProvider;
   pricing: ModelPricing;
+  region?: string;
+  underlyingModelId?: string;
 };
 
 export const SUPPORTED_CHAT_MODELS = [
+  {
+    id: "bedrock-deepseek-v3-2",
+    provider: "bedrock",
+    region: "ap-northeast-1",
+    underlyingModelId: "deepseek.v3.2",
+    pricing: {
+      inputUsdPerMillionTokens: 1,
+      outputUsdPerMillionTokens: 5,
+    },
+  },
   {
     id: "claude-sonnet-4-6",
     provider: "anthropic",
@@ -69,4 +81,4 @@ export function findSupportedChatModel(modelId: string) {
   return SUPPORTED_CHAT_MODELS.find((model) => model.id === modelId);
 }
 
-export const DEFAULT_CHAT_MODEL_ID: SupportedChatModelId = "claude-opus-4-6";
+export const DEFAULT_CHAT_MODEL_ID: SupportedChatModelId = "bedrock-deepseek-v3-2";

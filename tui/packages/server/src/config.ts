@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 const integerFromString = z.coerce.number().int();
+const optionalNonEmptyString = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().min(1).optional(),
+);
 
 const runtimeConfigSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -13,14 +17,23 @@ const runtimeConfigSchema = z.object({
   POLAR_PRODUCT_ID: z.string().min(1),
   POLAR_CREDITS_METER_ID: z.string().min(1),
   POLAR_SERVER: z.enum(["sandbox", "production"]).default("sandbox"),
-  ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  OPENAI_API_KEY: z.string().min(1).optional(),
-  AWS_BEARER_TOKEN_BEDROCK: z.string().min(1).optional(),
+  ANTHROPIC_API_KEY: optionalNonEmptyString,
+  OPENAI_API_KEY: optionalNonEmptyString,
+  AWS_BEARER_TOKEN_BEDROCK: optionalNonEmptyString,
+  BEDROCK_AWS_REGION: z.string().min(1).default("ap-northeast-1"),
+  BEDROCK_CHAT_MODEL_ID: z
+    .string()
+    .min(1)
+    .default("deepseek.v3.2"),
 }).refine(
-  (config) => config.ANTHROPIC_API_KEY || config.OPENAI_API_KEY || config.AWS_BEARER_TOKEN_BEDROCK,
+  (config) =>
+    config.ANTHROPIC_API_KEY ||
+    config.OPENAI_API_KEY ||
+    config.AWS_BEARER_TOKEN_BEDROCK ||
+    (config.BEDROCK_AWS_REGION && config.BEDROCK_CHAT_MODEL_ID),
   {
-    message: "At least one AI provider credential is required",
-    path: ["ANTHROPIC_API_KEY"],
+    message: "At least one AI provider must be configured",
+    path: ["BEDROCK_CHAT_MODEL_ID"],
   },
 );
 

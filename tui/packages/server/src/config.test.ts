@@ -48,9 +48,12 @@ describe("runtime configuration", () => {
     }
   });
 
-  test("requires at least one AI provider credential", () => {
+  test("defaults the Bedrock provider configuration for ECS task-role credentials", () => {
     const { ANTHROPIC_API_KEY, OPENAI_API_KEY, AWS_BEARER_TOKEN_BEDROCK, ...env } = validEnv;
 
-    expect(() => loadRuntimeConfig(env)).toThrow(/At least one AI provider credential/);
+    const config = loadRuntimeConfig(env);
+
+    expect(config.BEDROCK_AWS_REGION).toBe("ap-northeast-1");
+    expect(config.BEDROCK_CHAT_MODEL_ID).toBe("deepseek.v3.2");
   });
 });

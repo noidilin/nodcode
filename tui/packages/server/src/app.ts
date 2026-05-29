@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception";
 
 import { createRequireAuth, type AuthenticateRequest } from "./middleware/require-auth";
 import { createSessionsRoutes } from "./routes/sessions";
-import chat from "./routes/chat";
+import { createChatRoutes, type ChatStreamText, type IngestAiUsage } from "./routes/chat";
 import auth from "./routes/auth";
 import billing from "./routes/billing";
 import { logger, sanitizeForLog, type Logger } from "./logger";
@@ -15,6 +15,8 @@ export type AppDependencies = {
   authenticateRequest?: AuthenticateRequest;
   database?: Pick<typeof db, "session">;
   getCreditsBalance?: GetCreditsBalance;
+  streamText?: ChatStreamText;
+  ingestAiUsage?: IngestAiUsage;
 };
 
 export function createApp(dependencies: AppDependencies = {}) {
@@ -49,6 +51,12 @@ export function createApp(dependencies: AppDependencies = {}) {
   const sessions = createSessionsRoutes({
     database: dependencies.database,
     getCreditsBalance: dependencies.getCreditsBalance,
+  });
+  const chat = createChatRoutes({
+    database: dependencies.database,
+    getCreditsBalance: dependencies.getCreditsBalance,
+    streamText: dependencies.streamText,
+    ingestAiUsage: dependencies.ingestAiUsage,
   });
 
   app.use("/sessions/*", requireAuth);

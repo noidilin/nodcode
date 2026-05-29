@@ -27,3 +27,9 @@ const renderer = await createCliRenderer({
   exitOnCtrlC: false,
 });
 createRoot(renderer).render(<App />);
+
+renderer.on("destroy", () => {
+  // Switch back to main screen and clear any remaining output
+  process.stdout.write("\x1B[?1049l\x1B[2J\x1B[H");
+  process.exit(0);
+});
