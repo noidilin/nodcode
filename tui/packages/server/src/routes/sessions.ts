@@ -5,8 +5,14 @@ import { z } from "zod";
 import { db } from "@nodcode/database/client";
 
 import type { AuthenticatedEnv } from "../middleware/require-auth";
-import { requireCreditsBalance } from "../middleware/require-credits-balance";
+import { createRequireCreditsBalance, type GetCreditsBalance } from "../middleware/require-credits-balance";
 
+type SessionDatabase = Pick<typeof db, "session">;
+
+type SessionsRouteDependencies = {
+  database?: SessionDatabase;
+  getCreditsBalance?: GetCreditsBalance;
+};
 
 const createSessionSchema = z.object({
   title: z.string(),
@@ -19,11 +25,15 @@ const createSessionValidator = zValidator(
   }
 });
 
-const app = new Hono<AuthenticatedEnv>()
+export function createSessionsRoutes(dependencies: SessionsRouteDependencies = {}) {
+  const database = dependencies.database ?? db;
+  const requireCreditsBalance = createRequireCreditsBalance(dependencies.getCreditsBalance);
+
+  return new Hono<AuthenticatedEnv>()
   .get("/", async (c) => {
     const userId = c.get("userId");
 
-    const sessions = await db.session.findMany({
+    const sessions = await database.session.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
       select: {
@@ -48,7 +58,7 @@ const app = new Hono<AuthenticatedEnv>()
     const id = c.req.param("id");
     const userId = c.get("userId");
     
-    const session = await db.session.findUnique({
+    const session = await database.session.findFirst({
       where: { id, userId },
     });
 
@@ -71,7 +81,7 @@ const app = new Hono<AuthenticatedEnv>()
     const userId = c.get("userId");
     const data = c.req.valid("json");
 
-    const session = await db.session.create({
+    const session = await database.session.create({
       data: {
         ...data,
         userId,
@@ -80,5 +90,6 @@ const app = new Hono<AuthenticatedEnv>()
 
     return c.json(session, 201);
   });
+}
 
-export default app;
+export default createSessionsRoutes();

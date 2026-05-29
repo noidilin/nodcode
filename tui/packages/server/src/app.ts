@@ -1,15 +1,20 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
-import { requireAuth } from "./middleware/require-auth";
-import sessions from "./routes/sessions";
+import { createRequireAuth, type AuthenticateRequest } from "./middleware/require-auth";
+import { createSessionsRoutes } from "./routes/sessions";
 import chat from "./routes/chat";
 import auth from "./routes/auth";
 import billing from "./routes/billing";
 import { logger, sanitizeForLog, type Logger } from "./logger";
+import type { GetCreditsBalance } from "./middleware/require-credits-balance";
+import type { db } from "@nodcode/database/client";
 
 export type AppDependencies = {
   logger?: Logger;
+  authenticateRequest?: AuthenticateRequest;
+  database?: Pick<typeof db, "session">;
+  getCreditsBalance?: GetCreditsBalance;
 };
 
 export function createApp(dependencies: AppDependencies = {}) {
@@ -39,6 +44,12 @@ export function createApp(dependencies: AppDependencies = {}) {
       throw new Error("test secret token should not reach clients");
     });
   }
+
+  const requireAuth = createRequireAuth(dependencies.authenticateRequest);
+  const sessions = createSessionsRoutes({
+    database: dependencies.database,
+    getCreditsBalance: dependencies.getCreditsBalance,
+  });
 
   app.use("/sessions/*", requireAuth);
   app.use("/chat/*", requireAuth);
