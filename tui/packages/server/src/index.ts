@@ -1,36 +1,62 @@
-import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
+import "dotenv/config";
 
-import { requireAuth } from "./middleware/require-auth";
-import sessions from "./routes/sessions";
-import chat from "./routes/chat";
-import auth from "./routes/auth";
-import billing from "./routes/billing";
+import { createApp } from "./app";
+import { initializeRuntimeConfig, RuntimeConfigError } from "./config";
+import { logger } from "./logger";
 
-const app = new Hono();
+export { createApp } from "./app";
+export type { AppType } from "./app";
 
-app.onError((error, c) => {
-  if (error instanceof HTTPException) {
-    return c.json({ 
-      error: error.message || "Request failed",
-    }, error.status);
+export function startServer() {
+  const config = initializeRuntimeConfig();
+  const app = createApp();
+
+  // idleTimeout must be high, otherwise LLM tool calls might not complete.
+  const server = Bun.serve({
+    hostname: config.HOST,
+    port: config.PORT,
+    fetch: app.fetch,
+    idleTimeout: 255,
+  });
+
+  logger.info("NodCode API server started", {
+    host: config.HOST,
+    port: server.port,
+    environment: config.NODE_ENV,
+  });
+
+  let shuttingDown = false;
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    logger.info("NodCode API server shutting down", { signal });
+    await server.stop(false);
+    logger.info("NodCode API server stopped", { signal });
+    process.exit(0);
   };
 
-  console.error("Unhandled server error", error);
-  return c.json({ error: "Internal server error" }, 500);
-});
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 
-app.use("/sessions/*", requireAuth);
-app.use("/chat/*", requireAuth);
-app.use("/billing/checkout", requireAuth);
-app.use("/billing/portal", requireAuth);
+  return server;
+}
 
-const routes = app
-  .route("/auth", auth)
-  .route("/billing", billing)
-  .route("/sessions", sessions)
-  .route("/chat", chat);
+if (import.meta.main) {
+  try {
+    startServer();
+  } catch (error) {
+    if (error instanceof RuntimeConfigError) {
+      logger.error("Server startup failed due to invalid runtime configuration", {
+        issues: error.issues,
+      });
+    } else {
+      logger.error("Server startup failed", { error });
+    }
 
-export type AppType = typeof routes;
-// idleTimeout must be high, otherwise LLM tool calls might not complete
-export default { port: 3000, fetch: app.fetch, idleTimeout: 255 };
+    process.exit(1);
+  }
+}
+
+const app = createApp();
+export default app;

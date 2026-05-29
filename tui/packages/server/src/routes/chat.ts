@@ -23,6 +23,7 @@ import { requireCreditsBalance } from "../middleware/require-credits-balance";
 import { calculateCreditsForUsage } from "../lib/credits";
 import { ingestAiUsage } from "../lib/polar";
 import { isSupportedChatModel, resolveChatModel } from "../lib/models";
+import { logger } from "../logger";
 
 type ChatMessageMetadata = {
   mode?: ModeType;
@@ -173,7 +174,8 @@ const app = new Hono<AuthenticatedEnv>()
           }
         },
         onError(error) {
-          return error instanceof Error ? error.message : String(error);
+          logger.error("Chat stream failed", { error, sessionId: id, userId });
+          return "Chat response failed";
         },
       });
     },

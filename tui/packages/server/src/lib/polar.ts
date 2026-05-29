@@ -1,44 +1,27 @@
 import { Polar } from "@polar-sh/sdk";
-
-type PolarServer = "sandbox" | "production";
-
-function getRequiredEnv(name: string) {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`${name} environment variable is required`);
-  }
-  return value;
-}
-
-export function getPolarAccessToken() {
-  return getRequiredEnv("POLAR_ACCESS_TOKEN");
-}
+import { getRuntimeConfig } from "../config";
 
 export function getPolarProductId() {
-  return getRequiredEnv("POLAR_PRODUCT_ID");
+  return getRuntimeConfig().POLAR_PRODUCT_ID;
 }
 
 export function getPolarCreditsMeterId() {
-  return getRequiredEnv("POLAR_CREDITS_METER_ID");
+  return getRuntimeConfig().POLAR_CREDITS_METER_ID;
 }
 
-export function getPolarServer(): PolarServer {
-  const server = process.env.POLAR_SERVER;
-  if (!server) {
-    return "sandbox";
+let polar: Polar | null = null;
+
+function getPolarClient() {
+  if (!polar) {
+    const config = getRuntimeConfig();
+    polar = new Polar({
+      accessToken: config.POLAR_ACCESS_TOKEN,
+      server: config.POLAR_SERVER,
+    });
   }
 
-  if (server !== "sandbox" && server !== "production") {
-    throw new Error("POLAR_SERVER must be either 'sandbox' or 'production'");
-  }
-
-  return server;
+  return polar;
 }
-
-const polar = new Polar({
-  accessToken: getPolarAccessToken(),
-  server: getPolarServer(),
-});
 
 function hasStatusCode(error: unknown): error is { statusCode: number } {
   return (
@@ -58,7 +41,7 @@ export async function createCheckoutUrl({
   customerExternalId,
   requestUrl,
 }: CreateCheckoutUrlParams) {
-  const result = await polar.checkouts.create({
+  const result = await getPolarClient().checkouts.create({
     products: [getPolarProductId()],
     successUrl: new URL("/billing/success", requestUrl).toString(),
     externalCustomerId: customerExternalId,
@@ -72,7 +55,7 @@ export async function createCustomerPortalUrl({
   customerExternalId,
   requestUrl,
 }: CreateCheckoutUrlParams) {
-  const result = await polar.customerSessions.create({
+  const result = await getPolarClient().customerSessions.create({
     externalCustomerId: customerExternalId,
     returnUrl: new URL("/billing/success", requestUrl).toString(),
   });
@@ -82,7 +65,7 @@ export async function createCustomerPortalUrl({
 
 export async function getAvailableCreditsBalance(customerExternalId: string) {
   try {
-    const customerState = await polar.customers.getStateExternal({
+    const customerState = await getPolarClient().customers.getStateExternal({
       externalId: customerExternalId,
     });
 
@@ -120,7 +103,7 @@ export async function ingestAiUsage({
     return;
   }
 
-  await polar.events.ingest({
+  await getPolarClient().events.ingest({
     events: [
       {
         name: "nodcode_usage",
