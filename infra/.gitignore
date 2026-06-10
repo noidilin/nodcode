@@ -1,0 +1,16 @@
+# Terraform/Terragrunt generated state and working directories
+.terraform/
+.terragrunt-cache/
+.terragrunt-stack/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Local owner overrides
+*.tfvars
+*.tfvars.json
+
+# Terragrunt stack generated unit directories under live environments
+live/*/*/

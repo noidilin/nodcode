@@ -1,0 +1,15 @@
+output "ecs_cluster_name" { value = aws_ecs_cluster.main.name }
+output "ecs_service_name" { value = aws_ecs_service.api.name }
+output "alb_dns_name" { value = aws_lb.api.dns_name }
+output "alb_zone_id" { value = aws_lb.api.zone_id }
+output "alb_arn_suffix" { value = aws_lb.api.arn_suffix }
+output "target_group_arn_suffix" { value = aws_lb_target_group.api.arn_suffix }
+output "api_domain" { value = var.api_domain }
+output "https_url" { value = "https://${var.api_domain}" }
+output "raw_alb_https_url" { value = "https://${aws_lb.api.dns_name}" }
+output "acm_certificate_arn" { value = aws_acm_certificate_validation.api.certificate_arn }
+output "app_runtime_secret_arn" { value = aws_secretsmanager_secret.app.arn }
+output "ecs_execution_role_arn" { value = aws_iam_role.ecs_execution.arn }
+output "ecs_task_role_arn" { value = aws_iam_role.ecs_task.arn }
+output "allowed_bedrock_model_arns" { value = local.bedrock_model_arns }
+output "api_log_group_name" { value = aws_cloudwatch_log_group.api.name }
