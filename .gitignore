@@ -1,1 +1,5 @@
 /ref
+
+# Local secret payloads for AWS Secrets Manager bootstrap.
+infra/secrets/*.json
+!infra/secrets/*.json.example

@@ -34,8 +34,6 @@ locals {
   db_multi_az             = false
   db_deletion_protection  = true
 
-  polar_server = "sandbox"
-
   bedrock_region                = "ap-northeast-1"
   bedrock_chat_model_id         = "deepseek.v3.2"
   additional_bedrock_model_arns = []
@@ -114,7 +112,6 @@ unit "api-service" {
     task_memory                   = local.task_memory
     desired_count                 = local.desired_count
     log_retention_days            = local.log_retention_days
-    polar_server                  = local.polar_server
     bedrock_region                = local.bedrock_region
     bedrock_chat_model_id         = local.bedrock_chat_model_id
     additional_bedrock_model_arns = local.additional_bedrock_model_arns

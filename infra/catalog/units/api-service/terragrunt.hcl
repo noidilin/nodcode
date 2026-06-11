@@ -46,7 +46,7 @@ dependency "database" {
 
   mock_outputs_allowed_terraform_commands = ["validate", "plan"]
   mock_outputs = {
-    database_url = "postgresql://nodcode:mock@localhost:5432/nodcode?schema=public"
+    database_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:devops-nodcode-staging/database-mock"
   }
 }
 
@@ -66,7 +66,7 @@ inputs = {
   alb_security_group_id         = dependency.networking.outputs.alb_security_group_id
   ecs_security_group_id         = dependency.networking.outputs.ecs_security_group_id
   ecr_repository_url            = dependency.api_bootstrap.outputs.ecr_repository_url
-  database_url                  = dependency.database.outputs.database_url
+  database_secret_arn           = dependency.database.outputs.database_secret_arn
   hosted_zone_name              = values.hosted_zone_name
   api_domain                    = values.api_domain
   enable_http_to_https_redirect = values.enable_http_to_https_redirect
@@ -78,7 +78,6 @@ inputs = {
   task_memory                   = values.task_memory
   desired_count                 = values.desired_count
   log_retention_days            = values.log_retention_days
-  polar_server                  = values.polar_server
   bedrock_region                = values.bedrock_region
   bedrock_chat_model_id         = values.bedrock_chat_model_id
   additional_bedrock_model_arns = values.additional_bedrock_model_arns

@@ -9,10 +9,7 @@ variable "private_app_subnet_ids" { type = list(string) }
 variable "alb_security_group_id" { type = string }
 variable "ecs_security_group_id" { type = string }
 variable "ecr_repository_url" { type = string }
-variable "database_url" {
-  type      = string
-  sensitive = true
-}
+variable "database_secret_arn" { type = string }
 variable "hosted_zone_name" { type = string }
 variable "api_domain" { type = string }
 variable "enable_http_to_https_redirect" { type = bool }
@@ -24,7 +21,6 @@ variable "task_cpu" { type = number }
 variable "task_memory" { type = number }
 variable "desired_count" { type = number }
 variable "log_retention_days" { type = number }
-variable "polar_server" { type = string }
 variable "bedrock_region" { type = string }
 variable "bedrock_chat_model_id" { type = string }
 variable "additional_bedrock_model_arns" { type = list(string) }

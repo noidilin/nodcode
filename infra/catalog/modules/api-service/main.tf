@@ -35,22 +35,24 @@ locals {
 
 resource "aws_secretsmanager_secret" "app" {
   name                    = "${var.name_prefix}/api-runtime"
-  description             = "NodCode API runtime environment. Replace placeholder SaaS values before deploying real traffic."
+  description             = "NodCode API runtime third-party secrets. Values are written out-of-band and must not be passed through Terraform."
   recovery_window_in_days = 7
 
   tags = local.common_tags
 }
 
-resource "aws_secretsmanager_secret_version" "app" {
+# Bootstrap a non-sensitive initial version so the first ECS service deployment can
+# resolve all referenced JSON keys. Real third-party secret values are written
+# out-of-band with aws secretsmanager put-secret-value and are ignored here.
+resource "aws_secretsmanager_secret_version" "app_bootstrap" {
   secret_id = aws_secretsmanager_secret.app.id
   secret_string = jsonencode({
-    DATABASE_URL             = var.database_url
-    CLERK_SECRET_KEY         = "REPLACE_ME"
-    CLERK_PUBLISHABLE_KEY    = "REPLACE_ME"
-    POLAR_ACCESS_TOKEN       = "REPLACE_ME"
-    POLAR_PRODUCT_ID         = "REPLACE_ME"
-    POLAR_CREDITS_METER_ID   = "REPLACE_ME"
-    POLAR_SERVER             = var.polar_server
+    CLERK_SECRET_KEY         = ""
+    CLERK_PUBLISHABLE_KEY    = ""
+    POLAR_ACCESS_TOKEN       = ""
+    POLAR_PRODUCT_ID         = ""
+    POLAR_CREDITS_METER_ID   = ""
+    POLAR_SERVER             = "sandbox"
     SENTRY_DSN               = ""
     ANTHROPIC_API_KEY        = ""
     OPENAI_API_KEY           = ""
@@ -95,9 +97,12 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_managed" {
 
 data "aws_iam_policy_document" "ecs_execution_secrets" {
   statement {
-    sid       = "ReadInjectedRuntimeSecrets"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [aws_secretsmanager_secret.app.arn]
+    sid     = "ReadInjectedRuntimeSecrets"
+    actions = ["secretsmanager:GetSecretValue"]
+    resources = [
+      aws_secretsmanager_secret.app.arn,
+      var.database_secret_arn,
+    ]
   }
 }
 
@@ -169,7 +174,7 @@ resource "aws_ecs_task_definition" "api" {
       ]
 
       secrets = [
-        { name = "DATABASE_URL", valueFrom = "${aws_secretsmanager_secret.app.arn}:DATABASE_URL::" },
+        { name = "DATABASE_URL", valueFrom = "${var.database_secret_arn}:DATABASE_URL::" },
         { name = "CLERK_SECRET_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:CLERK_SECRET_KEY::" },
         { name = "CLERK_PUBLISHABLE_KEY", valueFrom = "${aws_secretsmanager_secret.app.arn}:CLERK_PUBLISHABLE_KEY::" },
         { name = "POLAR_ACCESS_TOKEN", valueFrom = "${aws_secretsmanager_secret.app.arn}:POLAR_ACCESS_TOKEN::" },

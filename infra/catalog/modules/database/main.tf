@@ -62,10 +62,11 @@ resource "aws_db_instance" "postgres" {
 resource "aws_secretsmanager_secret_version" "db" {
   secret_id = aws_secretsmanager_secret.db.id
   secret_string = jsonencode({
-    username = var.db_username
-    password = random_password.db.result
-    host     = aws_db_instance.postgres.address
-    port     = aws_db_instance.postgres.port
-    dbname   = var.db_name
+    DATABASE_URL = "postgresql://${var.db_username}:${urlencode(random_password.db.result)}@${aws_db_instance.postgres.address}:${aws_db_instance.postgres.port}/${var.db_name}?schema=public"
+    username     = var.db_username
+    password     = random_password.db.result
+    host         = aws_db_instance.postgres.address
+    port         = aws_db_instance.postgres.port
+    dbname       = var.db_name
   })
 }
