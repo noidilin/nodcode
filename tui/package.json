@@ -5,6 +5,13 @@
   "scripts": {
     "dev:cli": "bun run --watch packages/cli/src/index.tsx",
     "dev:server": "bun run --hot packages/server/src/index.ts",
+    "compose:up": "bun run db:up && bun run db:push && docker compose up --build -d api",
+    "compose:down": "docker compose down",
+    "compose:logs": "docker compose logs -f api postgres",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "db:push": "bun run --cwd packages/database db:push",
     "test:server": "bun run --filter @nodcode/server test",
     "test:cli": "bun run --filter @nodcode/cli test",
     "test:httpapi": "bun run --filter @nodcode/server test:httpapi",

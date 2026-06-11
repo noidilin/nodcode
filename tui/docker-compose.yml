@@ -1,0 +1,41 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nodcode-api:local
+    container_name: nodcode-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      NODE_ENV: development
+      DATABASE_URL: postgresql://nodcode:nodcode@postgres:5432/nodcode
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16
+    container_name: nodcode-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nodcode
+      POSTGRES_PASSWORD: nodcode
+      POSTGRES_DB: nodcode
+    ports:
+      - "5432:5432"
+    volumes:
+      - nodcode-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nodcode -d nodcode"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  nodcode-postgres-data:

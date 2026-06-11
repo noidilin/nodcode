@@ -90,17 +90,15 @@ Fill in the required values:
 
 ```bash
 API_URL=http://localhost:3000
-DATABASE_URL=
+DATABASE_URL=postgresql://nodcode:nodcode@localhost:5432/nodcode
 
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 
 CLERK_FRONTEND_API=
-CLERK_OAUTH_CLIENT_SECRET=
 CLERK_OAUTH_CLIENT_ID=
 CLERK_PUBLISHABLE_KEY=
 CLERK_SECRET_KEY=
-JWT_SECRET=jwt-secret
 
 POLAR_ACCESS_TOKEN=
 POLAR_PRODUCT_ID=
@@ -130,7 +128,6 @@ Copy the generated application credentials into `.env`:
 | Environment variable | Clerk value |
 |----------------------|-------------|
 | `CLERK_OAUTH_CLIENT_ID` | OAuth application Client ID |
-| `CLERK_OAUTH_CLIENT_SECRET` | OAuth application Client Secret |
 | `CLERK_FRONTEND_API` | Clerk frontend API URL |
 | `CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
 | `CLERK_SECRET_KEY` | Clerk secret key |
@@ -178,18 +175,43 @@ The CLI upgrade flow calls `/billing/checkout`, which opens a Polar checkout URL
 
 ### 5. Set up the database
 
-Generate the Prisma client:
+The repo includes a local PostgreSQL service in `docker-compose.yml` using the same default `DATABASE_URL` as `.env.example`.
+
+Start Postgres and apply the Prisma schema:
 
 ```bash
-bun run --cwd packages/database db:generate
+bun run db:up
+bun run db:push
 ```
 
-Apply your Prisma schema to the configured Postgres database using your preferred Prisma workflow.
+Useful commands:
+
+```bash
+bun run db:logs   # follow Postgres logs
+bun run db:down   # stop and remove the container network; keeps the named volume
+```
 
 ### 6. Run the server
 
+For hot-reload local development on the host:
+
 ```bash
 bun run dev:server
+```
+
+Or run the API server and Postgres together with Docker Compose:
+
+```bash
+bun run compose:up
+```
+
+`compose:up` starts `postgres`, applies the Prisma schema using `DATABASE_URL` from `.env`, builds the API image, then starts `api`. The API container reads secrets from `.env`, but overrides `DATABASE_URL` to use the Compose hostname `postgres`.
+
+Useful commands:
+
+```bash
+bun run compose:logs
+bun run compose:down
 ```
 
 The API runs on `http://localhost:3000`.
