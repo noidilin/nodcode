@@ -169,6 +169,7 @@ resource "aws_ecs_task_definition" "api" {
         { name = "NODE_ENV", value = "production" },
         { name = "HOST", value = "0.0.0.0" },
         { name = "PORT", value = tostring(var.api_container_port) },
+        { name = "NODE_EXTRA_CA_CERTS", value = "/usr/local/share/ca-certificates/rds-global-bundle.crt" },
         { name = "BEDROCK_AWS_REGION", value = var.bedrock_region },
         { name = "BEDROCK_CHAT_MODEL_ID", value = var.bedrock_chat_model_id }
       ]
@@ -230,7 +231,8 @@ resource "aws_ecs_task_definition" "database_migration" {
       command   = ["bun", "run", "--cwd", "packages/database", "db:migrate:deploy"]
 
       environment = [
-        { name = "NODE_ENV", value = "production" }
+        { name = "NODE_ENV", value = "production" },
+        { name = "NODE_EXTRA_CA_CERTS", value = "/usr/local/share/ca-certificates/rds-global-bundle.crt" }
       ]
 
       secrets = [

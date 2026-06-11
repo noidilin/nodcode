@@ -20,7 +20,9 @@ locals {
 
   api_container_port = 3000
   health_check_path  = "/health"
-  image_tag          = "latest"
+  # Keep staging off mutable "latest" so a Terragrunt apply cannot silently
+  # redeploy an older image. Build/push this tag before applying api-service.
+  image_tag          = "staging"
   task_cpu           = 512
   task_memory        = 1024
   desired_count      = 1
