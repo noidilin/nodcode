@@ -15,9 +15,14 @@ function sanitizeString(value: string) {
 
 export function sanitizeForLog(value: unknown): unknown {
   if (value instanceof Error) {
+    const errorRecord = value as Error & { code?: unknown; meta?: unknown; clientVersion?: unknown };
+
     return {
       name: value.name,
       message: "[redacted]",
+      ...(errorRecord.code ? { code: sanitizeForLog(errorRecord.code) } : {}),
+      ...(errorRecord.meta ? { meta: sanitizeForLog(errorRecord.meta) } : {}),
+      ...(errorRecord.clientVersion ? { clientVersion: sanitizeForLog(errorRecord.clientVersion) } : {}),
     };
   }
 

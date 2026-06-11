@@ -208,6 +208,48 @@ resource "aws_ecs_task_definition" "api" {
   ])
 }
 
+resource "aws_ecs_task_definition" "database_migration" {
+  family                   = "${var.name_prefix}-database-migration"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = tostring(var.task_cpu)
+  memory                   = tostring(var.task_memory)
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "X86_64"
+  }
+
+  container_definitions = jsonencode([
+    {
+      name      = "migration"
+      image     = "${var.ecr_repository_url}:${var.image_tag}"
+      essential = true
+      command   = ["bun", "run", "--cwd", "packages/database", "db:migrate:deploy"]
+
+      environment = [
+        { name = "NODE_ENV", value = "production" }
+      ]
+
+      secrets = [
+        { name = "DATABASE_URL", valueFrom = "${var.database_secret_arn}:DATABASE_URL::" }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.api.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "migration"
+          mode                  = "blocking"
+        }
+      }
+    }
+  ])
+}
+
 resource "aws_acm_certificate" "api" {
   domain_name       = var.api_domain
   validation_method = "DNS"

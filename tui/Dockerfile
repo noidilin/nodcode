@@ -14,10 +14,21 @@ RUN bun run --filter @nodcode/server build:container
 FROM oven/bun:1.3.14-slim AS runtime
 WORKDIR /app
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+ADD --chmod=0644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /usr/local/share/ca-certificates/rds-global-bundle.crt
+RUN update-ca-certificates
+
 ENV NODE_ENV=production \
   HOST=0.0.0.0 \
-  PORT=3000
+  PORT=3000 \
+  NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/rds-global-bundle.crt
 
+COPY --from=build --chown=bun:bun /app/package.json ./package.json
+COPY --from=build --chown=bun:bun /app/bun.lock ./bun.lock
+COPY --from=build --chown=bun:bun /app/node_modules ./node_modules
+COPY --from=build --chown=bun:bun /app/packages/database ./packages/database
 COPY --from=build --chown=bun:bun /app/packages/server/dist ./packages/server/dist
 
 USER bun

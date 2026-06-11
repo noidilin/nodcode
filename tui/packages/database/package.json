@@ -8,6 +8,9 @@
   },
   "scripts": {
     "db:generate": "bunx prisma generate",
+    "db:migrate:deploy": "bunx prisma migrate deploy",
+    "db:migrate:resolve:init": "bunx prisma migrate resolve --applied 20260611000000_init_sessions",
+    "db:migrate:status": "bunx prisma migrate status",
     "db:push": "bunx prisma db push"
   },
   "devDependencies": {
