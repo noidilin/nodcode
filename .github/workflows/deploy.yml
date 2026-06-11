@@ -1,0 +1,178 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tui/**"
+      - "infra/**"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/terraform-plan.yml"
+      - ".github/workflows/deploy.yml"
+      - ".github/workflows/destroy-runtime.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        required: true
+        type: choice
+        options: [staging]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  resolve-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.resolve.outputs.environment }}
+      infra_dir: ${{ steps.resolve.outputs.infra_dir }}
+      aws_region: ${{ steps.resolve.outputs.aws_region }}
+      plan_role_arn: ${{ steps.resolve.outputs.plan_role_arn }}
+      image_push_role_arn: ${{ steps.resolve.outputs.image_push_role_arn }}
+      apply_role_arn: ${{ steps.resolve.outputs.apply_role_arn }}
+      ecr_repository_name: ${{ steps.resolve.outputs.ecr_repository_name }}
+    steps:
+      - id: resolve
+        env:
+          REQUESTED_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+        run: |
+          case "$REQUESTED_ENV" in
+            staging)
+              echo "environment=staging" >> "$GITHUB_OUTPUT"
+              echo "infra_dir=infra/live/staging" >> "$GITHUB_OUTPUT"
+              echo "aws_region=ap-northeast-1" >> "$GITHUB_OUTPUT"
+              echo "plan_role_arn=arn:aws:iam::549475122024:role/devops-nodcode-staging-github-plan" >> "$GITHUB_OUTPUT"
+              echo "image_push_role_arn=arn:aws:iam::549475122024:role/devops-nodcode-staging-github-image-push" >> "$GITHUB_OUTPUT"
+              echo "apply_role_arn=arn:aws:iam::549475122024:role/devops-nodcode-staging-github-apply" >> "$GITHUB_OUTPUT"
+              echo "ecr_repository_name=devops-nodcode-api" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported environment: $REQUESTED_ENV" >&2
+              exit 1
+              ;;
+          esac
+
+  preflight:
+    runs-on: ubuntu-latest
+    needs: resolve-environment
+    env:
+      AWS_REGION: ${{ needs.resolve-environment.outputs.aws_region }}
+      API_IMAGE_URI: 000000000000.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+      - name: Install app dependencies
+        working-directory: tui
+        run: bun install --frozen-lockfile
+      - name: App checks
+        working-directory: tui
+        run: |
+          bun run typecheck
+          bun run test:server
+          bun run build:server
+          bun run build:cli
+          bun run docker:build:server
+          bun run docker:smoke:server
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: ${{ needs.resolve-environment.outputs.plan_role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Setup Terragrunt
+        run: |
+          curl -fsSL -o /tmp/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v0.93.10/terragrunt_linux_amd64
+          sudo install -m 0755 /tmp/terragrunt /usr/local/bin/terragrunt
+      - name: IaC preflight
+        run: |
+          terragrunt hcl format --check --diff --working-dir infra
+          find infra/catalog/modules -name "*.tf" -exec terraform fmt -check -diff {} \;
+          cd "${{ needs.resolve-environment.outputs.infra_dir }}"
+          terragrunt stack run validate --non-interactive --tf-forward-stdout \
+            --queue-exclude-dir '.terragrunt-stack/deployment-identity' \
+            --queue-exclude-dir '.terragrunt-stack/api-env-bootstrap'
+          terragrunt stack run plan --non-interactive --tf-forward-stdout \
+            --queue-exclude-dir '.terragrunt-stack/deployment-identity' \
+            --queue-exclude-dir '.terragrunt-stack/api-env-bootstrap'
+
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    needs: [resolve-environment, preflight]
+    environment: ${{ needs.resolve-environment.outputs.environment }}
+    outputs:
+      api_image_uri: ${{ steps.image.outputs.api_image_uri }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: ${{ needs.resolve-environment.outputs.image_push_role_arn }}
+          aws-region: ${{ needs.resolve-environment.outputs.aws_region }}
+      - id: image
+        env:
+          AWS_REGION: ${{ needs.resolve-environment.outputs.aws_region }}
+          REPOSITORY_NAME: ${{ needs.resolve-environment.outputs.ecr_repository_name }}
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          ECR_REPOSITORY_URL=$(aws ecr describe-repositories --repository-names "$REPOSITORY_NAME" --query 'repositories[0].repositoryUri' --output text)
+          REGISTRY=${ECR_REPOSITORY_URL%/*}
+          docker build -f tui/Dockerfile -t "nodcode-api:${IMAGE_TAG}" tui
+          if aws ecr describe-images --repository-name "$REPOSITORY_NAME" --image-ids "imageTag=${IMAGE_TAG}" >/dev/null 2>&1; then
+            echo "Reusing existing image ${IMAGE_TAG}"
+          else
+            aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+            docker tag "nodcode-api:${IMAGE_TAG}" "${ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+            docker push "${ECR_REPOSITORY_URL}:${IMAGE_TAG}"
+          fi
+          DIGEST=$(aws ecr describe-images --repository-name "$REPOSITORY_NAME" --image-ids "imageTag=${IMAGE_TAG}" --query 'imageDetails[0].imageDigest' --output text)
+          API_IMAGE_URI="${ECR_REPOSITORY_URL}@${DIGEST}"
+          echo "api_image_uri=${API_IMAGE_URI}" >> "$GITHUB_OUTPUT"
+          aws ecr describe-image-scan-findings --repository-name "$REPOSITORY_NAME" --image-id "imageTag=${IMAGE_TAG}" --output table || true
+
+  deploy-runtime:
+    runs-on: ubuntu-latest
+    needs: [resolve-environment, build-and-push-image]
+    environment: ${{ needs.resolve-environment.outputs.environment }}
+    concurrency:
+      group: deploy-${{ needs.resolve-environment.outputs.environment }}
+      cancel-in-progress: false
+    env:
+      AWS_REGION: ${{ needs.resolve-environment.outputs.aws_region }}
+      API_IMAGE_URI: ${{ needs.build-and-push-image.outputs.api_image_uri }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: ${{ needs.resolve-environment.outputs.apply_role_arn }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Setup Terragrunt
+        run: |
+          curl -fsSL -o /tmp/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v0.93.10/terragrunt_linux_amd64
+          sudo install -m 0755 /tmp/terragrunt /usr/local/bin/terragrunt
+      - name: Apply runtime, run migration, update service
+        working-directory: ${{ needs.resolve-environment.outputs.infra_dir }}
+        run: |
+          terragrunt stack run apply --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/networking' --queue-include-dir '.terragrunt-stack/database' --queue-include-dir '.terragrunt-stack/api-platform' --queue-strict-include
+          terragrunt stack run apply --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-taskdefs' --queue-strict-include
+          CLUSTER=$(terragrunt --working-dir .terragrunt-stack/api-platform output -raw ecs_cluster_name)
+          TASK_DEF=$(terragrunt --working-dir .terragrunt-stack/api-taskdefs output -raw migration_task_definition_arn)
+          SUBNETS=$(terragrunt --working-dir .terragrunt-stack/api-platform output -json private_app_subnet_ids | jq -r 'join(",")')
+          SECURITY_GROUP=$(terragrunt --working-dir .terragrunt-stack/api-platform output -raw ecs_security_group_id)
+          TASK_ARN=$(aws ecs run-task --region "$AWS_REGION" --cluster "$CLUSTER" --launch-type FARGATE --task-definition "$TASK_DEF" --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUP],assignPublicIp=DISABLED}" --query 'tasks[0].taskArn' --output text)
+          aws ecs wait tasks-stopped --region "$AWS_REGION" --cluster "$CLUSTER" --tasks "$TASK_ARN"
+          EXIT_CODE=$(aws ecs describe-tasks --region "$AWS_REGION" --cluster "$CLUSTER" --tasks "$TASK_ARN" --query 'tasks[0].containers[0].exitCode' --output text)
+          test "$EXIT_CODE" = "0"
+          terragrunt stack run apply --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-service' --queue-strict-include
+          SERVICE=$(terragrunt --working-dir .terragrunt-stack/api-service output -raw ecs_service_name)
+          API_URL=$(terragrunt --working-dir .terragrunt-stack/api-service output -raw api_url)
+          aws ecs wait services-stable --region "$AWS_REGION" --cluster "$CLUSTER" --services "$SERVICE"
+          curl -fsS "$API_URL/health"
+          STATUS=$(curl -sS -o /tmp/sessions-response.txt -w "%{http_code}" "$API_URL/sessions" || true)
+          test "$STATUS" = "401"

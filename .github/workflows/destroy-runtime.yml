@@ -1,0 +1,60 @@
+name: Destroy Staging Runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to destroy
+        required: true
+        type: choice
+        options: [staging]
+      confirmation:
+        description: Type destroy-staging
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  destroy-runtime:
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    env:
+      AWS_REGION: ap-northeast-1
+      APPLY_ROLE_ARN: arn:aws:iam::549475122024:role/devops-nodcode-staging-github-apply
+    steps:
+      - name: Confirm destructive action
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [ "$CONFIRMATION" != "destroy-staging" ]; then
+            echo "Confirmation mismatch" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: ${{ env.APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Setup Terragrunt
+        run: |
+          curl -fsSL -o /tmp/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v0.93.10/terragrunt_linux_amd64
+          sudo install -m 0755 /tmp/terragrunt /usr/local/bin/terragrunt
+      - name: Destroy disposable staging runtime only
+        working-directory: infra/live/staging
+        env:
+          API_IMAGE_URI: 000000000000.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        run: |
+          terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-service' --queue-strict-include
+          terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-taskdefs' --queue-strict-include
+          terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-platform' --queue-strict-include
+          terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/database' --queue-strict-include
+          terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/networking' --queue-strict-include

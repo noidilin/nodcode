@@ -8,12 +8,11 @@ import auth from "./routes/auth";
 import billing from "./routes/billing";
 import { logger, sanitizeForLog, type Logger } from "./logger";
 import type { GetCreditsBalance } from "./middleware/require-credits-balance";
-import type { db } from "@nodcode/database/client";
 
 export type AppDependencies = {
   logger?: Logger;
   authenticateRequest?: AuthenticateRequest;
-  database?: Pick<typeof db, "session">;
+  database?: any;
   getCreditsBalance?: GetCreditsBalance;
   streamText?: ChatStreamText;
   ingestAiUsage?: IngestAiUsage;

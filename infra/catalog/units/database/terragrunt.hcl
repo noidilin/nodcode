@@ -47,4 +47,5 @@ inputs = {
   db_engine_version       = values.db_engine_version
   db_multi_az             = values.db_multi_az
   db_deletion_protection  = values.db_deletion_protection
+  db_skip_final_snapshot  = values.db_skip_final_snapshot
 }

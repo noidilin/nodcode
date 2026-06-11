@@ -19,34 +19,28 @@ remote_state {
   }
 }
 
-dependency "networking" {
-  config_path = "../networking"
+dependency "api_platform" {
+  config_path = "../api-platform"
 
   mock_outputs_allowed_terraform_commands = ["validate", "plan"]
   mock_outputs = {
-    vpc_id                 = "vpc-00000000000000000"
-    public_subnet_ids      = ["subnet-00000000000000001", "subnet-00000000000000002"]
+    ecs_cluster_name       = "devops-nodcode-staging-cluster"
+    ecs_cluster_arn        = "arn:aws:ecs:ap-northeast-1:123456789012:cluster/devops-nodcode-staging-cluster"
+    target_group_arn       = "arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:targetgroup/devops-nodcode-staging-api/0000000000000000"
     private_app_subnet_ids = ["subnet-00000000000000003", "subnet-00000000000000004"]
-    alb_security_group_id  = "sg-00000000000000001"
     ecs_security_group_id  = "sg-00000000000000002"
+    api_container_port     = 3000
+    api_url                = "https://staging.nodcode.noidilin.dev"
   }
 }
 
-dependency "api_bootstrap" {
-  config_path = "../api-bootstrap"
+dependency "api_taskdefs" {
+  config_path = "../api-taskdefs"
 
   mock_outputs_allowed_terraform_commands = ["validate", "plan"]
   mock_outputs = {
-    ecr_repository_url = "123456789012.dkr.ecr.ap-northeast-1.amazonaws.com/nodcode-staging-api"
-  }
-}
-
-dependency "database" {
-  config_path = "../database"
-
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
-  mock_outputs = {
-    database_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:devops-nodcode-staging/database-mock"
+    api_task_definition_arn = "arn:aws:ecs:ap-northeast-1:123456789012:task-definition/devops-nodcode-staging-api:1"
+    container_name          = "api"
   }
 }
 
@@ -55,30 +49,18 @@ terraform {
 }
 
 inputs = {
-  aws_region                    = values.aws_region
-  environment                   = values.environment
-  project                       = values.project
-  owner                         = values.owner
-  name_prefix                   = values.name_prefix
-  vpc_id                        = dependency.networking.outputs.vpc_id
-  public_subnet_ids             = dependency.networking.outputs.public_subnet_ids
-  private_app_subnet_ids        = dependency.networking.outputs.private_app_subnet_ids
-  alb_security_group_id         = dependency.networking.outputs.alb_security_group_id
-  ecs_security_group_id         = dependency.networking.outputs.ecs_security_group_id
-  ecr_repository_url            = dependency.api_bootstrap.outputs.ecr_repository_url
-  database_secret_arn           = dependency.database.outputs.database_secret_arn
-  hosted_zone_name              = values.hosted_zone_name
-  api_domain                    = values.api_domain
-  enable_http_to_https_redirect = values.enable_http_to_https_redirect
-  alb_idle_timeout_seconds      = values.alb_idle_timeout_seconds
-  api_container_port            = values.api_container_port
-  health_check_path             = values.health_check_path
-  image_tag                     = values.image_tag
-  task_cpu                      = values.task_cpu
-  task_memory                   = values.task_memory
-  desired_count                 = values.desired_count
-  log_retention_days            = values.log_retention_days
-  bedrock_region                = values.bedrock_region
-  bedrock_chat_model_id         = values.bedrock_chat_model_id
-  additional_bedrock_model_arns = values.additional_bedrock_model_arns
+  environment             = values.environment
+  project                 = values.project
+  owner                   = values.owner
+  name_prefix             = values.name_prefix
+  ecs_cluster_name        = dependency.api_platform.outputs.ecs_cluster_name
+  ecs_cluster_arn         = dependency.api_platform.outputs.ecs_cluster_arn
+  api_task_definition_arn = dependency.api_taskdefs.outputs.api_task_definition_arn
+  target_group_arn        = dependency.api_platform.outputs.target_group_arn
+  private_app_subnet_ids  = dependency.api_platform.outputs.private_app_subnet_ids
+  ecs_security_group_id   = dependency.api_platform.outputs.ecs_security_group_id
+  container_name          = dependency.api_taskdefs.outputs.container_name
+  api_container_port      = dependency.api_platform.outputs.api_container_port
+  desired_count           = values.desired_count
+  api_url                 = dependency.api_platform.outputs.api_url
 }

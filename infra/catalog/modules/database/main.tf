@@ -50,8 +50,8 @@ resource "aws_db_instance" "postgres" {
 
   backup_retention_period   = 7
   deletion_protection       = var.db_deletion_protection
-  skip_final_snapshot       = false
-  final_snapshot_identifier = "${var.name_prefix}-postgres-final"
+  skip_final_snapshot       = var.db_skip_final_snapshot
+  final_snapshot_identifier = var.db_skip_final_snapshot ? null : "${var.name_prefix}-postgres-final"
 
   auto_minor_version_upgrade = true
   apply_immediately          = false

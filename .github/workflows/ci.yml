@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "tui/**"
+      - "infra/**"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/terraform-plan.yml"
+      - ".github/workflows/deploy.yml"
+      - ".github/workflows/destroy-runtime.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tui/**"
+      - "infra/**"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/terraform-plan.yml"
+      - ".github/workflows/deploy.yml"
+      - ".github/workflows/destroy-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      - name: Install dependencies
+        working-directory: tui
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        working-directory: tui
+        run: bun run typecheck
+      - name: Test server
+        working-directory: tui
+        run: bun run test:server
+      - name: Build server
+        working-directory: tui
+        run: bun run build:server
+      - name: Build CLI
+        working-directory: tui
+        run: bun run build:cli
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      - name: Install dependencies
+        working-directory: tui
+        run: bun install --frozen-lockfile
+      - name: Build server image
+        working-directory: tui
+        run: bun run docker:build:server
+      - name: Smoke server image
+        working-directory: tui
+        run: bun run docker:smoke:server

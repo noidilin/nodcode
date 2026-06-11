@@ -1,16 +1,17 @@
 # AWS control-plane runbook
 
-This runbook covers the Terragrunt stack in `infra/live/staging` and the feature modules in `infra/catalog/modules/{networking,api-bootstrap,database,api-service}`.
+This runbook covers the shared bootstrap stack in `infra/live/shared`, the staging stack in `infra/live/staging`, and the feature modules in `infra/catalog/modules`.
 
 ## What it provisions
 
 - VPC with public ALB subnets, private ECS subnets, and private database subnets.
-- ECR repository for the NodCode API image.
-- ECS Fargate cluster, task definition, and service in private subnets with `awsvpc` networking.
+- Shared immutable ECR repository for the NodCode API image.
+- GitHub Actions OIDC provider plus staging `plan`, `image-push`, and `apply` roles.
+- ECS Fargate cluster, digest-pinned task definitions, migration task definition, and service in private subnets with `awsvpc` networking.
 - Internet-facing ALB with Route53 DNS alias, DNS-validated ACM certificate, HTTPS listener, `/health` target checks, and `300s` idle timeout for chat streaming.
 - RDS PostgreSQL in private subnets, not publicly reachable.
 - Secrets Manager entries for database credentials and ECS-injected API runtime config.
-- CloudWatch log group for container logs.
+- Persistent staging API runtime secret and CloudWatch log group that survive runtime teardown.
 - Separate ECS execution and task roles with sandbox-approved `devops-*` names and the pre-existing `lab-devops-permissions-boundary`. The execution role pulls images, writes logs, and reads injected secrets. The task role grants Bedrock runtime invokes for the approved model scope.
 - Security groups so users reach the API only through the ALB, ECS accepts traffic only from the ALB, and Postgres accepts traffic only from ECS tasks.
 
@@ -23,7 +24,7 @@ Issue #6 is HITL. Review these before applying:
 3. ACM certificate validation is managed by Terraform DNS records in Route53; the certificate is created in the same region as the ALB.
 4. Cost choices: NAT gateway, RDS instance size, `desired_count`, and `db_multi_az`.
 5. Security posture: `allowed_http_cidr_blocks`, database deletion protection, and whether to add WAF early.
-6. Sandbox prerequisites: `lab-devops-permissions-boundary` must already exist in the target account. GitHub OIDC deployment identity is deferred to Phase 2.
+6. Sandbox prerequisites: `lab-devops-permissions-boundary` must already exist in the target account. GitHub OIDC deployment identity is now bootstrapped in shared/staging persistent units.
 7. Bedrock model access in the target account/region for `deepseek.v3.2`.
 
 ## Validate and plan
@@ -38,13 +39,39 @@ terragrunt stack run validate
 terragrunt stack run plan
 ```
 
-## Apply
+## Bootstrap persistent resources
 
-Only apply after owner review of the plan:
+Apply shared resources once from local AWS SSO:
+
+```sh
+cd infra/live/shared
+terragrunt stack run apply --non-interactive
+```
+
+Apply staging resources that must survive runtime teardown:
 
 ```sh
 cd infra/live/staging
-terragrunt stack run apply
+terragrunt stack run apply --non-interactive --tf-forward-stdout \
+  --queue-include-dir '.terragrunt-stack/deployment-identity' \
+  --queue-include-dir '.terragrunt-stack/api-env-bootstrap' \
+  --queue-strict-include
+```
+
+## Apply disposable runtime manually
+
+Normally `.github/workflows/deploy.yml` applies runtime on `main` after pushing a digest-pinned image and running migrations. For manual validation only, export an immutable API image URI and apply runtime units:
+
+```sh
+export API_IMAGE_URI='549475122024.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:...'
+cd infra/live/staging
+terragrunt stack run apply --non-interactive --tf-forward-stdout \
+  --queue-include-dir '.terragrunt-stack/networking' \
+  --queue-include-dir '.terragrunt-stack/database' \
+  --queue-include-dir '.terragrunt-stack/api-platform' \
+  --queue-include-dir '.terragrunt-stack/api-taskdefs' \
+  --queue-include-dir '.terragrunt-stack/api-service' \
+  --queue-strict-include
 ```
 
 ## Configure runtime secrets
@@ -102,28 +129,35 @@ aws ecs update-service \
 
 ## Build and push the API image
 
-After apply, get the ECR URL from the generated bootstrap unit directory:
+CI/CD builds `tui/Dockerfile`, pushes the shared ECR tag `sha-${GITHUB_SHA}`, resolves the immutable digest, and deploys with `API_IMAGE_URI=...@sha256:...`. For a manual image push:
 
 ```sh
-cd infra/live/staging/.terragrunt-stack/api-bootstrap
-ECR_REPOSITORY_URL=$(terragrunt output -raw ecr_repository_url)
-```
+cd infra/live/shared/.terragrunt-stack/api-image-repository
+ECR_REPOSITORY_URL=$(terragrunt output -raw repository_url)
+REPOSITORY_NAME=$(terragrunt output -raw repository_name)
+IMAGE_TAG="sha-$(git rev-parse HEAD)"
+REGISTRY=${ECR_REPOSITORY_URL%/*}
 
-From `tui/`:
-
-```sh
 aws ecr get-login-password --region ap-northeast-1 \
-  | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.ap-northeast-1.amazonaws.com"
+  | docker login --username AWS --password-stdin "$REGISTRY"
 
 docker buildx build \
   --platform linux/amd64 \
-  -f Dockerfile \
-  -t "$ECR_REPOSITORY_URL:staging" \
+  -f ../../../tui/Dockerfile \
+  -t "$ECR_REPOSITORY_URL:$IMAGE_TAG" \
   --push \
-  .
+  ../../../tui
+
+DIGEST=$(aws ecr describe-images \
+  --region ap-northeast-1 \
+  --repository-name "$REPOSITORY_NAME" \
+  --image-ids "imageTag=$IMAGE_TAG" \
+  --query 'imageDetails[0].imageDigest' \
+  --output text)
+export API_IMAGE_URI="$ECR_REPOSITORY_URL@$DIGEST"
 ```
 
-Then set `image_tag = "staging"` in `infra/live/staging/terragrunt.stack.hcl`, rerun `terragrunt stack run plan`, and apply the ECS task definition update. CI/CD should later replace this with immutable Git SHA tags.
+The staging task definition requires a digest-pinned image URI. Do not deploy mutable environment aliases such as `:staging`.
 
 ## Run database migrations
 
@@ -156,7 +190,7 @@ aws ecs run-task \
   --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUPS],assignPublicIp=DISABLED}"
 ```
 
-Check the migration task exit code in ECS and CloudWatch. A successful run prints Prisma migration status without revealing credentials. To inspect status without applying changes, override the command with `db:migrate:status`:
+Check the migration task exit code in ECS and CloudWatch. If CloudWatch prints `ENOENT: Could not change directory to "packages/database"`, ECS is still running an image that was built before the migration-capable Dockerfile; rebuild/push the `staging` tag and redeploy. A successful run prints Prisma migration status without revealing credentials. To inspect status without applying changes, override the command with `db:migrate:status`:
 
 ```sh
 aws ecs run-task \
@@ -204,3 +238,30 @@ curl -i \
 Expected results: `/health` returns 200, `GET /sessions` returns 200 with a JSON list, and `POST /sessions` returns 201 with a created session when the account has sufficient Polar credits.
 
 Avoid real Bedrock chat smoke tests by default; use the manual Bedrock validation notes in `docs/plan/phase-1-bedrock.md` when you intentionally want to spend tokens.
+
+## CI/CD workflows
+
+- `.github/workflows/ci.yml`: non-AWS PR/main checks for Bun typecheck, server tests, builds, and container smoke.
+- `.github/workflows/terraform-plan.yml`: same-repo PR staging runtime plan with a sticky PR comment. Fork PRs do not assume AWS roles.
+- `.github/workflows/deploy.yml`: `main` deploy to staging through GitHub environment-scoped OIDC roles. It builds/pushes the API image once, deploys task definitions by digest, runs the migration task, updates ECS service, waits for stability, and runs safe no-auth smoke checks.
+- `.github/workflows/destroy-runtime.yml`: manual staging runtime destroy gated by the typed confirmation `destroy-staging`.
+
+Create a GitHub environment named `staging`. It is required for the image-push/apply OIDC trust subject `repo:noidilin/nodcode:environment:staging` even if no reviewers are configured.
+
+## Destroy disposable staging runtime
+
+Prefer the `Destroy Staging Runtime` workflow. It destroys only runtime units in dependency-safe order and leaves shared/persistent resources intact.
+
+Manual equivalent:
+
+```sh
+export API_IMAGE_URI='549475122024.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:0000000000000000000000000000000000000000000000000000000000000000'
+cd infra/live/staging
+terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-service' --queue-strict-include
+terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-taskdefs' --queue-strict-include
+terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-platform' --queue-strict-include
+terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/database' --queue-strict-include
+terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/networking' --queue-strict-include
+```
+
+Do not destroy `infra/live/shared`, `deployment-identity`, or `api-env-bootstrap` during cheap staging teardown. Staging intentionally sets deletion protection off and skips the final RDS snapshot; production must not copy that posture.

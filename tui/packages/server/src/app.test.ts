@@ -297,6 +297,15 @@ describe("server app", () => {
             inputTokens: 1_000,
             outputTokens: 2_000,
             totalTokens: 3_000,
+            inputTokenDetails: {
+              noCacheTokens: undefined,
+              cacheReadTokens: undefined,
+              cacheWriteTokens: undefined,
+            },
+            outputTokenDetails: {
+              textTokens: undefined,
+              reasoningTokens: undefined,
+            },
           },
           providerMetadata: {
             bedrock: {
@@ -330,7 +339,7 @@ describe("server app", () => {
           headers: { "content-type": "text/plain" },
         });
       },
-    })) as AppDependencies["streamText"];
+    })) as unknown as AppDependencies["streamText"];
 
     const { app, sessions, creditChecks } = createSessionLifecycleApp(
       { alice: 10 },
@@ -368,8 +377,8 @@ describe("server app", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("mock stream");
     expect(creditChecks).toEqual(["alice", "alice"]);
-    expect(sessions[0].messages).toHaveLength(2);
-    expect(sessions[0].messages[1]).toMatchObject({
+    expect(sessions[0]!.messages).toHaveLength(2);
+    expect(sessions[0]!.messages[1]).toMatchObject({
       id: "assistant-message-1",
       role: "assistant",
       metadata: {

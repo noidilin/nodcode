@@ -1,0 +1,17 @@
+variable "aws_region" { type = string }
+variable "environment" { type = string }
+variable "project" { type = string }
+variable "owner" { type = string }
+variable "name_prefix" { type = string }
+variable "api_image_uri" { type = string }
+variable "ecs_execution_role_arn" { type = string }
+variable "ecs_task_role_arn" { type = string }
+variable "database_secret_arn" { type = string }
+variable "app_runtime_secret_arn" { type = string }
+variable "api_log_group_name" { type = string }
+variable "api_container_port" { type = number }
+variable "health_check_path" { type = string }
+variable "task_cpu" { type = number }
+variable "task_memory" { type = number }
+variable "bedrock_region" { type = string }
+variable "bedrock_chat_model_id" { type = string }
