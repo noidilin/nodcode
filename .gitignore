@@ -1,4 +1,5 @@
 /ref
+.ralph/
 
 # Local secret payloads for AWS Secrets Manager bootstrap.
 infra/secrets/*.json
