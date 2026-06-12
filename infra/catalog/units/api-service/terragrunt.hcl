@@ -24,13 +24,13 @@ dependency "api_platform" {
 
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
-    ecs_cluster_name       = "devops-nodcode-staging-cluster"
-    ecs_cluster_arn        = "arn:aws:ecs:ap-northeast-1:123456789012:cluster/devops-nodcode-staging-cluster"
-    target_group_arn       = "arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:targetgroup/devops-nodcode-staging-api/0000000000000000"
+    ecs_cluster_name       = "devops-nodcode-stage-cluster"
+    ecs_cluster_arn        = "arn:aws:ecs:ap-northeast-1:123456789012:cluster/devops-nodcode-stage-cluster"
+    target_group_arn       = "arn:aws:elasticloadbalancing:ap-northeast-1:123456789012:targetgroup/devops-nodcode-stage-api/0000000000000000"
     private_app_subnet_ids = ["subnet-00000000000000003", "subnet-00000000000000004"]
     ecs_security_group_id  = "sg-00000000000000002"
     api_container_port     = 3000
-    api_url                = "https://staging.nodcode.noidilin.dev"
+    api_url                = "https://stage.nodcode.noidilin.dev"
   }
 }
 
@@ -39,7 +39,7 @@ dependency "api_taskdefs" {
 
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
-    api_task_definition_arn = "arn:aws:ecs:ap-northeast-1:123456789012:task-definition/devops-nodcode-staging-api:1"
+    api_task_definition_arn = "arn:aws:ecs:ap-northeast-1:123456789012:task-definition/devops-nodcode-stage-api:1"
     container_name          = "api"
   }
 }

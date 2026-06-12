@@ -37,7 +37,7 @@ dependency "database" {
 
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
-    database_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:devops-nodcode-staging/database-mock"
+    database_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:devops-nodcode-stage/database-mock"
   }
 }
 
@@ -46,8 +46,8 @@ dependency "api_env_bootstrap" {
 
   mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
-    app_runtime_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:devops-nodcode-staging/api-runtime-mock"
-    api_log_group_name     = "/ecs/devops-nodcode-staging-api"
+    app_runtime_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:devops-nodcode-stage/api-runtime-mock"
+    api_log_group_name     = "/ecs/devops-nodcode-stage-api"
   }
 }
 

@@ -16,7 +16,7 @@ on:
         description: Environment to deploy
         required: true
         type: choice
-        options: [staging]
+        options: [stage]
 
 permissions:
   id-token: write
@@ -36,16 +36,16 @@ jobs:
     steps:
       - id: resolve
         env:
-          REQUESTED_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+          REQUESTED_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'stage' }}
         run: |
           case "$REQUESTED_ENV" in
-            staging)
-              echo "environment=staging" >> "$GITHUB_OUTPUT"
-              echo "infra_dir=infra/live/staging" >> "$GITHUB_OUTPUT"
+            stage)
+              echo "environment=stage" >> "$GITHUB_OUTPUT"
+              echo "infra_dir=infra/live/stage" >> "$GITHUB_OUTPUT"
               echo "aws_region=ap-northeast-1" >> "$GITHUB_OUTPUT"
-              echo "plan_role_arn=arn:aws:iam::549475122024:role/devops-nodcode-staging-github-plan" >> "$GITHUB_OUTPUT"
-              echo "image_push_role_arn=arn:aws:iam::549475122024:role/devops-nodcode-staging-github-image-push" >> "$GITHUB_OUTPUT"
-              echo "apply_role_arn=arn:aws:iam::549475122024:role/devops-nodcode-staging-github-apply" >> "$GITHUB_OUTPUT"
+              echo "plan_role_arn=arn:aws:iam::549475122024:role/devops-nodcode-stage-github-plan" >> "$GITHUB_OUTPUT"
+              echo "image_push_role_arn=arn:aws:iam::549475122024:role/devops-nodcode-stage-github-image-push" >> "$GITHUB_OUTPUT"
+              echo "apply_role_arn=arn:aws:iam::549475122024:role/devops-nodcode-stage-github-apply" >> "$GITHUB_OUTPUT"
               echo "ecr_repository_name=devops-nodcode-api" >> "$GITHUB_OUTPUT"
               ;;
             *)

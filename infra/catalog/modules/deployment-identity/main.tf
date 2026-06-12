@@ -54,15 +54,16 @@ locals {
     Owner       = var.owner
   }
 
-  permissions_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/lab-devops-permissions-boundary"
-  name_prefix              = "${var.name_prefix}-github"
+  runtime_boundary_arn      = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/lab-devops-permissions-boundary"
+  gitops_apply_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/lab-gitops-oidc-apply-permissions-boundary"
+  name_prefix               = "${var.name_prefix}-github"
 }
 
 resource "aws_iam_role" "plan" {
   name                 = "${local.name_prefix}-plan"
   assume_role_policy   = data.aws_iam_policy_document.github_plan_trust.json
   max_session_duration = 3600
-  permissions_boundary = local.permissions_boundary_arn
+  permissions_boundary = local.gitops_apply_boundary_arn
   tags                 = local.common_tags
 }
 
@@ -70,7 +71,7 @@ resource "aws_iam_role" "image_push" {
   name                 = "${local.name_prefix}-image-push"
   assume_role_policy   = data.aws_iam_policy_document.github_environment_trust.json
   max_session_duration = 3600
-  permissions_boundary = local.permissions_boundary_arn
+  permissions_boundary = local.runtime_boundary_arn
   tags                 = local.common_tags
 }
 
@@ -78,7 +79,7 @@ resource "aws_iam_role" "apply" {
   name                 = "${local.name_prefix}-apply"
   assume_role_policy   = data.aws_iam_policy_document.github_environment_trust.json
   max_session_duration = 3600
-  permissions_boundary = local.permissions_boundary_arn
+  permissions_boundary = local.gitops_apply_boundary_arn
   tags                 = local.common_tags
 }
 
@@ -90,14 +91,14 @@ data "aws_iam_policy_document" "plan" {
   }
 
   statement {
-    sid       = "DescribeStagingResources"
+    sid       = "DescribeEnvironmentResources"
     actions   = ["acm:Describe*", "acm:List*", "application-autoscaling:Describe*", "cloudwatch:Describe*", "ec2:Describe*", "ecr:Describe*", "ecs:Describe*", "ecs:List*", "elasticloadbalancing:Describe*", "iam:Get*", "iam:List*", "logs:Describe*", "rds:Describe*", "route53:Get*", "route53:List*", "secretsmanager:DescribeSecret", "secretsmanager:ListSecrets", "sts:GetCallerIdentity"]
     resources = ["*"]
   }
 }
 
 resource "aws_iam_role_policy" "plan" {
-  name   = "staging-plan"
+  name   = "${var.environment}-plan"
   role   = aws_iam_role.plan.id
   policy = data.aws_iam_policy_document.plan.json
 }
@@ -141,14 +142,33 @@ data "aws_iam_policy_document" "apply" {
   }
 
   statement {
-    sid       = "ManageStagingRuntime"
+    sid       = "ManageEnvironmentRuntime"
     actions   = ["acm:*", "application-autoscaling:*", "cloudwatch:*", "ec2:*", "ecs:*", "elasticloadbalancing:*", "logs:*", "rds:*", "route53:*", "secretsmanager:*", "sts:GetCallerIdentity"]
     resources = ["*"]
   }
 
   statement {
-    sid       = "ManageTaskRolesForRuntime"
-    actions   = ["iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies", "iam:PassRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:TagRole"]
+    sid = "ManageTaskRolesForRuntime"
+    actions = [
+      "iam:AttachRolePolicy",
+      "iam:CreateRole",
+      "iam:DeleteRole",
+      "iam:DeleteRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:GetRole",
+      "iam:GetRolePolicy",
+      "iam:ListAttachedRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+      "iam:ListRolePolicies",
+      "iam:ListRoleTags",
+      "iam:PassRole",
+      "iam:PutRolePermissionsBoundary",
+      "iam:PutRolePolicy",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:UpdateRole"
+    ]
     resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.name_prefix}-ecs-*"]
 
     condition {
@@ -160,7 +180,7 @@ data "aws_iam_policy_document" "apply" {
 }
 
 resource "aws_iam_role_policy" "apply" {
-  name   = "staging-apply"
+  name   = "${var.environment}-apply"
   role   = aws_iam_role.apply.id
   policy = data.aws_iam_policy_document.apply.json
 }
