@@ -24,6 +24,9 @@ env:
   AWS_REGION: ap-northeast-1
   PLAN_ROLE_ARN: arn:aws:iam::549475122024:role/devops-nodcode-stage-github-plan
   API_IMAGE_URI: 000000000000.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  TF_CLI_ARGS_plan: -no-color
+  TF_CLI_ARGS_validate: -no-color
+  TG_NO_COLOR: "true"
 
 jobs:
   stage-plan:
@@ -81,7 +84,10 @@ jobs:
             const plan = fs.existsSync(process.env.RUNNER_TEMP + '/stage-plan.txt')
               ? fs.readFileSync(process.env.RUNNER_TEMP + '/stage-plan.txt', 'utf8')
               : 'Plan output was not produced.';
-            const truncated = plan.length > 60000 ? plan.slice(-60000) : plan;
+            const plainPlan = plan
+              .replace(/[\u001b\u009b][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g, '')
+              .replace(/\uFFFD\[[0-9;]*m/g, '');
+            const truncated = plainPlan.length > 60000 ? plainPlan.slice(-60000) : plainPlan;
             const body = `${marker}\n## Stage Terraform plan\n\nCommit: \`${context.sha}\`\n\nStatus: \`${{ steps.plan.outputs.status || 'not-run' }}\`\n\nFull plan is available as the \`stage-terraform-plan\` artifact.\n\n<details><summary>Plan output</summary>\n\n\`\`\`text\n${truncated}\n\`\`\`\n</details>`;
             const {owner, repo} = context.repo;
             const issue_number = context.issue.number;
