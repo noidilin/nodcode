@@ -22,7 +22,7 @@ remote_state {
 dependency "api_platform" {
   config_path = "../api-platform"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
     ecs_cluster_name       = "devops-nodcode-staging-cluster"
     ecs_cluster_arn        = "arn:aws:ecs:ap-northeast-1:123456789012:cluster/devops-nodcode-staging-cluster"
@@ -37,7 +37,7 @@ dependency "api_platform" {
 dependency "api_taskdefs" {
   config_path = "../api-taskdefs"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
     api_task_definition_arn = "arn:aws:ecs:ap-northeast-1:123456789012:task-definition/devops-nodcode-staging-api:1"
     container_name          = "api"

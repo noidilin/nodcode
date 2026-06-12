@@ -22,7 +22,7 @@ remote_state {
 dependency "github_oidc_provider" {
   config_path = "../../../shared/.terragrunt-stack/github-oidc-provider"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
     provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
   }
@@ -31,7 +31,7 @@ dependency "github_oidc_provider" {
 dependency "api_image_repository" {
   config_path = "../../../shared/.terragrunt-stack/api-image-repository"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
     repository_arn = "arn:aws:ecr:ap-northeast-1:123456789012:repository/devops-nodcode-api"
   }

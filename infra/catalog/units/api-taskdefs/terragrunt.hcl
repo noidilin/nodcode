@@ -22,7 +22,7 @@ remote_state {
 dependency "api_platform" {
   config_path = "../api-platform"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
     ecs_execution_role_arn = "arn:aws:iam::123456789012:role/devops-nodcode-staging-ecs-execution"
     ecs_task_role_arn      = "arn:aws:iam::123456789012:role/devops-nodcode-staging-ecs-task"
@@ -34,7 +34,7 @@ dependency "api_platform" {
 dependency "database" {
   config_path = "../database"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
     database_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:devops-nodcode-staging/database-mock"
   }
@@ -43,7 +43,7 @@ dependency "database" {
 dependency "api_env_bootstrap" {
   config_path = "../api-env-bootstrap"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
     app_runtime_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:devops-nodcode-staging/api-runtime-mock"
     api_log_group_name     = "/ecs/devops-nodcode-staging-api"
