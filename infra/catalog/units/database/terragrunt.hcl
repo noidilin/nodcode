@@ -22,7 +22,7 @@ remote_state {
 dependency "networking" {
   config_path = "../networking"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
     private_db_subnet_ids = ["subnet-00000000000000001", "subnet-00000000000000002"]
     db_security_group_id  = "sg-00000000000000001"

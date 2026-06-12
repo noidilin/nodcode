@@ -22,7 +22,7 @@ remote_state {
 dependency "networking" {
   config_path = "../networking"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
     vpc_id                 = "vpc-00000000000000000"
     public_subnet_ids      = ["subnet-00000000000000001", "subnet-00000000000000002"]
@@ -35,7 +35,7 @@ dependency "networking" {
 dependency "database" {
   config_path = "../database"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
     database_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:devops-nodcode-staging/database-mock"
   }
@@ -44,7 +44,7 @@ dependency "database" {
 dependency "api_env_bootstrap" {
   config_path = "../api-env-bootstrap"
 
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_allowed_terraform_commands = ["init", "validate", "plan"]
   mock_outputs = {
     app_runtime_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:devops-nodcode-staging/api-runtime-mock"
     api_log_group_name     = "/ecs/devops-nodcode-staging-api"
