@@ -61,11 +61,11 @@ jobs:
       AWS_REGION: ${{ needs.resolve-environment.outputs.aws_region }}
       API_IMAGE_URI: 000000000000.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:0000000000000000000000000000000000000000000000000000000000000000
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@v6.0.3
         with:
           persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+      - uses: oven-sh/setup-bun@v2.2.0
+      - uses: hashicorp/setup-terraform@v4.0.1
       - name: Install app dependencies
         working-directory: tui
         run: bun install --frozen-lockfile
@@ -78,13 +78,13 @@ jobs:
           bun run build:cli
           bun run docker:build:server
           bun run docker:smoke:server
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+      - uses: aws-actions/configure-aws-credentials@v6.2.0
         with:
           role-to-assume: ${{ needs.resolve-environment.outputs.plan_role_arn }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Setup Terragrunt
         run: |
-          curl -fsSL -o /tmp/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v0.93.10/terragrunt_linux_amd64
+          curl -fsSL -o /tmp/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v1.0.8/terragrunt_linux_amd64
           sudo install -m 0755 /tmp/terragrunt /usr/local/bin/terragrunt
       - name: IaC preflight
         run: |
@@ -105,10 +105,10 @@ jobs:
     outputs:
       api_image_uri: ${{ steps.image.outputs.api_image_uri }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@v6.0.3
         with:
           persist-credentials: false
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+      - uses: aws-actions/configure-aws-credentials@v6.2.0
         with:
           role-to-assume: ${{ needs.resolve-environment.outputs.image_push_role_arn }}
           aws-region: ${{ needs.resolve-environment.outputs.aws_region }}
@@ -144,17 +144,17 @@ jobs:
       AWS_REGION: ${{ needs.resolve-environment.outputs.aws_region }}
       API_IMAGE_URI: ${{ needs.build-and-push-image.outputs.api_image_uri }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@v6.0.3
         with:
           persist-credentials: false
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+      - uses: hashicorp/setup-terraform@v4.0.1
+      - uses: aws-actions/configure-aws-credentials@v6.2.0
         with:
           role-to-assume: ${{ needs.resolve-environment.outputs.apply_role_arn }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Setup Terragrunt
         run: |
-          curl -fsSL -o /tmp/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v0.93.10/terragrunt_linux_amd64
+          curl -fsSL -o /tmp/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v1.0.8/terragrunt_linux_amd64
           sudo install -m 0755 /tmp/terragrunt /usr/local/bin/terragrunt
       - name: Apply runtime, run migration, update service
         working-directory: ${{ needs.resolve-environment.outputs.infra_dir }}
