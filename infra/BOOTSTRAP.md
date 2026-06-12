@@ -44,13 +44,19 @@ Before applying any stack:
 
 ## 1. Bootstrap shared account resources
 
-Apply shared once per AWS account:
+Preferred script:
+
+```sh
+AWS_REGION=ap-northeast-1 infra/scripts/bootstrap-shared.sh
+```
+
+Manual equivalent. Apply shared once per AWS account. Prefer stack filters so shared bootstrap stays explicit:
 
 ```sh
 cd infra/live/shared
-terragrunt stack run init --non-interactive
-terragrunt stack run plan --non-interactive
-terragrunt stack run apply --non-interactive
+terragrunt stack run apply --non-interactive --tf-forward-stdout \
+  --filter github-oidc-provider \
+  --filter api-image-repository
 ```
 
 Expected shared outputs:
@@ -60,28 +66,68 @@ Expected shared outputs:
 - `api-image-repository.repository_url`
 - `api-image-repository.repository_arn`
 
+If these resources existed before a rename/state-path change, the first apply may fail with `EntityAlreadyExists` / repository already exists. Import the existing resources into the generated stack unit state, then re-run the filtered apply:
+
+```sh
+cd infra/live/shared
+terragrunt stack generate
+
+OIDC_ARN=$(aws iam list-open-id-connect-providers \
+  --query "OpenIDConnectProviderList[?contains(Arn, 'token.actions.githubusercontent.com')].Arn | [0]" \
+  --output text)
+
+cd .terragrunt-stack/github-oidc-provider
+terragrunt import aws_iam_openid_connect_provider.github "$OIDC_ARN"
+
+cd ../api-image-repository
+terragrunt import aws_ecr_repository.api devops-nodcode-api
+terragrunt import aws_ecr_lifecycle_policy.api devops-nodcode-api || true
+```
+
 Do not destroy `infra/live/shared` as part of stage/prod runtime teardown.
 
 ## 2. Bootstrap stage persistent resources
 
 Stage bootstrap creates deployment identity, the API runtime secret shell, and the API log group. These should survive `destroy-runtime.yml`.
 
+Preferred script:
+
 ```sh
-cd infra/live/stage
-terragrunt stack run init --non-interactive \
-  --queue-include-dir '.terragrunt-stack/deployment-identity' \
-  --queue-include-dir '.terragrunt-stack/api-env-bootstrap'
-
-terragrunt stack run plan --non-interactive --tf-forward-stdout \
-  --queue-include-dir '.terragrunt-stack/deployment-identity' \
-  --queue-include-dir '.terragrunt-stack/api-env-bootstrap'
-
-terragrunt stack run apply --non-interactive --tf-forward-stdout \
-  --queue-include-dir '.terragrunt-stack/deployment-identity' \
-  --queue-include-dir '.terragrunt-stack/api-env-bootstrap'
+AWS_REGION=ap-northeast-1 ENVIRONMENT=stage infra/scripts/bootstrap-stage-persistent.sh
 ```
 
-Then write real API runtime secrets out-of-band:
+Manual equivalent:
+
+```sh
+cd infra/live/stage
+terragrunt stack run apply --non-interactive --tf-forward-stdout \
+  --filter deployment-identity \
+  --filter api-env-bootstrap
+```
+
+If this is a re-bootstrap after renaming resources/workflow variables, the IAM roles may already exist while the new state path is empty. Import the roles into the `deployment-identity` unit, then re-run the filtered apply. Missing inline-policy imports are fine; `apply` will create them.
+
+```sh
+cd infra/live/stage
+terragrunt stack generate
+cd .terragrunt-stack/deployment-identity
+
+terragrunt import aws_iam_role.plan devops-nodcode-stage-github-plan
+terragrunt import aws_iam_role.image_push devops-nodcode-stage-github-image-push
+terragrunt import aws_iam_role.apply devops-nodcode-stage-github-apply
+
+# Optional: only if these inline policies already exist.
+terragrunt import aws_iam_role_policy.plan devops-nodcode-stage-github-plan:stage-plan || true
+terragrunt import aws_iam_role_policy.image_push devops-nodcode-stage-github-image-push:api-image-push || true
+terragrunt import aws_iam_role_policy.apply devops-nodcode-stage-github-apply:stage-apply || true
+
+cd ../..
+terragrunt stack run apply --non-interactive --tf-forward-stdout \
+  --filter deployment-identity \
+  --filter api-env-bootstrap
+```
+
+Then write real API runtime secrets out-of-band from the repository root:
 
 ```sh
 cp infra/secrets/stage.api-runtime.json.example infra/secrets/stage.api-runtime.json
@@ -95,7 +141,53 @@ aws secretsmanager put-secret-value \
 
 Never commit `infra/secrets/stage.api-runtime.json`.
 
-## 3. Deploy stage runtime
+## 3. Build and push the API image manually
+
+CI/CD builds `tui/Dockerfile`, pushes the shared ECR tag `sha-${GITHUB_SHA}`, resolves the immutable digest, and deploys with `API_IMAGE_URI=...@sha256:...`. If pushing manually, use the same tag convention and build for `linux/amd64` because the ECS task definition currently declares `X86_64`. This matters on Apple Silicon Macs.
+
+```sh
+AWS_REGION=ap-northeast-1
+REPO=devops-nodcode-api
+ECR_REPOSITORY_URL=$(cd infra/live/shared/.terragrunt-stack/api-image-repository && terragrunt output -raw repository_url)
+REGISTRY=${ECR_REPOSITORY_URL%/*}
+IMAGE_TAG="sha-$(git rev-parse HEAD)"
+
+aws ecr get-login-password --region "$AWS_REGION" \
+  | docker login --username AWS --password-stdin "$REGISTRY"
+
+# The ECR repo is immutable. Delete the old tag first if intentionally rebuilding
+# the same commit image, or skip the build when the tag already exists.
+docker buildx build \
+  --platform linux/amd64 \
+  -f tui/Dockerfile \
+  -t "$ECR_REPOSITORY_URL:$IMAGE_TAG" \
+  --push \
+  tui
+
+DIGEST=$(aws ecr describe-images \
+  --region "$AWS_REGION" \
+  --repository-name "$REPO" \
+  --image-ids imageTag="$IMAGE_TAG" \
+  --query 'imageDetails[0].imageDigest' \
+  --output text)
+
+export API_IMAGE_URI="$ECR_REPOSITORY_URL@$DIGEST"
+echo "$API_IMAGE_URI"
+```
+
+Audit images after push:
+
+```sh
+aws ecr describe-images \
+  --region ap-northeast-1 \
+  --repository-name devops-nodcode-api \
+  --query 'sort_by(imageDetails,& imagePushedAt)[].{pushedAt:imagePushedAt,tags:imageTags,digest:imageDigest,sizeBytes:imageSizeInBytes}' \
+  --output table
+```
+
+`docker buildx --push` may create untagged platform/provenance records alongside the tagged manifest list. Deploy the tagged manifest-list digest returned by the `imageTag` lookup above.
+
+## 4. Deploy stage runtime
 
 Preferred path: push/merge to `main` and let `.github/workflows/deploy.yml` build the image, resolve the ECR digest, apply runtime, run migrations, and update the ECS service.
 
@@ -105,18 +197,18 @@ Manual validation path:
 export API_IMAGE_URI='549475122024.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:...'
 cd infra/live/stage
 terragrunt stack run plan --non-interactive --tf-forward-stdout \
-  --queue-include-dir '.terragrunt-stack/networking' \
-  --queue-include-dir '.terragrunt-stack/database' \
-  --queue-include-dir '.terragrunt-stack/api-platform' \
-  --queue-include-dir '.terragrunt-stack/api-taskdefs' \
-  --queue-include-dir '.terragrunt-stack/api-service'
+  --filter networking \
+  --filter database \
+  --filter api-platform \
+  --filter api-taskdefs \
+  --filter api-service
 
 terragrunt stack run apply --non-interactive --tf-forward-stdout \
-  --queue-include-dir '.terragrunt-stack/networking' \
-  --queue-include-dir '.terragrunt-stack/database' \
-  --queue-include-dir '.terragrunt-stack/api-platform' \
-  --queue-include-dir '.terragrunt-stack/api-taskdefs' \
-  --queue-include-dir '.terragrunt-stack/api-service'
+  --filter networking \
+  --filter database \
+  --filter api-platform \
+  --filter api-taskdefs \
+  --filter api-service
 ```
 
 Stage intentionally uses disposable database settings:
@@ -128,7 +220,7 @@ db_skip_final_snapshot = true
 
 This is for cost-saving runtime teardown only. Do not copy this posture to production.
 
-## 4. Destroy stage runtime only
+## 5. Destroy stage runtime only
 
 Preferred path: run `.github/workflows/destroy-runtime.yml` and type `destroy-stage`.
 
@@ -137,11 +229,11 @@ Manual equivalent:
 ```sh
 export API_IMAGE_URI='549475122024.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:0000000000000000000000000000000000000000000000000000000000000000'
 cd infra/live/stage
-terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-service'
-terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-taskdefs'
-terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-platform'
-terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/database'
-terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/networking'
+terragrunt stack run destroy --non-interactive --tf-forward-stdout --filter api-service
+terragrunt stack run destroy --non-interactive --tf-forward-stdout --filter api-taskdefs
+terragrunt stack run destroy --non-interactive --tf-forward-stdout --filter api-platform
+terragrunt stack run destroy --non-interactive --tf-forward-stdout --filter database
+terragrunt stack run destroy --non-interactive --tf-forward-stdout --filter networking
 ```
 
 Do not include these units in cheap runtime teardown:
@@ -178,8 +270,8 @@ Then bootstrap prod in the same order:
 # Shared stays one-time/account-level; do not recreate if already applied.
 cd infra/live/prod
 terragrunt stack run apply --non-interactive --tf-forward-stdout \
-  --queue-include-dir '.terragrunt-stack/deployment-identity' \
-  --queue-include-dir '.terragrunt-stack/api-env-bootstrap'
+  --filter deployment-identity \
+  --filter api-env-bootstrap
 ```
 
 Write prod runtime secrets to the prod secret name, for example:
