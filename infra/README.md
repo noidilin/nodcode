@@ -14,11 +14,17 @@ infra/
       api-service/             # ECS Fargate API, ALB, ACM/DNS, logs, runtime secret, Bedrock IAM
     units/                     # Terragrunt unit wiring, one state per feature
   live/
-    root.hcl                   # Shared AWS provider generation
+    root.hcl                     # Shared AWS provider generation
+    shared/terragrunt.stack.hcl  # Account-level bootstrap resources
     staging/terragrunt.stack.hcl # Staging stack inputs
 ```
 
-The stack follows the feature-module pattern from `/Users/noid/hub/dev/web-lf2/infra`: small reusable modules in `catalog/modules`, Terragrunt wrappers in `catalog/units`, and environment composition in `live/*/terragrunt.stack.hcl`. IAM role names use the AWS sandbox-approved `devops-*` prefix, and runtime roles use the pre-existing `lab-devops-permissions-boundary`. Runbook: `../docs/runbooks/phase-1-infra.md`.
+The stack follows the feature-module pattern from `/Users/noid/hub/dev/web-lf2/infra`: small reusable modules in `catalog/modules`, Terragrunt wrappers in `catalog/units`, and environment composition in `live/*/terragrunt.stack.hcl`. IAM role names use the AWS sandbox-approved `devops-*` prefix, and runtime roles use the pre-existing `lab-devops-permissions-boundary`.
+
+Docs:
+
+- Bootstrap guide: `BOOTSTRAP.md`
+- Phase 1 runbook: `../docs/runbooks/phase-1-infra.md`
 
 ## Local commands
 
@@ -32,8 +38,10 @@ find infra/catalog/modules -name "*.tf" -exec terraform fmt -check -diff {} \;
 # Validate staging
 cd infra/live/staging && terragrunt stack run validate
 
-# Plan staging
-cd infra/live/staging && terragrunt stack run plan
+# Plan staging with a placeholder image digest
+cd infra/live/staging
+API_IMAGE_URI='000000000000.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:0000000000000000000000000000000000000000000000000000000000000000' \
+  terragrunt stack run plan
 ```
 
 State is stored in S3 using the same unit-per-feature-state pattern as `/Users/noid/hub/dev/web-lf2/infra`.
