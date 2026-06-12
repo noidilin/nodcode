@@ -1,4 +1,4 @@
-name: Destroy Staging Runtime
+name: Destroy Stage Runtime
 
 on:
   workflow_dispatch:
@@ -7,9 +7,9 @@ on:
         description: Environment to destroy
         required: true
         type: choice
-        options: [staging]
+        options: [stage]
       confirmation:
-        description: Type destroy-staging
+        description: Type destroy-stage
         required: true
         type: string
 
@@ -20,19 +20,19 @@ permissions:
 jobs:
   destroy-runtime:
     runs-on: ubuntu-latest
-    environment: staging
+    environment: stage
     concurrency:
-      group: deploy-staging
+      group: deploy-stage
       cancel-in-progress: false
     env:
       AWS_REGION: ap-northeast-1
-      APPLY_ROLE_ARN: arn:aws:iam::549475122024:role/devops-nodcode-staging-github-apply
+      APPLY_ROLE_ARN: arn:aws:iam::549475122024:role/devops-nodcode-stage-github-apply
     steps:
       - name: Confirm destructive action
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
-          if [ "$CONFIRMATION" != "destroy-staging" ]; then
+          if [ "$CONFIRMATION" != "destroy-stage" ]; then
             echo "Confirmation mismatch" >&2
             exit 1
           fi
@@ -48,8 +48,8 @@ jobs:
         run: |
           curl -fsSL -o /tmp/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v1.0.8/terragrunt_linux_amd64
           sudo install -m 0755 /tmp/terragrunt /usr/local/bin/terragrunt
-      - name: Destroy disposable staging runtime only
-        working-directory: infra/live/staging
+      - name: Destroy disposable stage runtime only
+        working-directory: infra/live/stage
         env:
           API_IMAGE_URI: 000000000000.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:0000000000000000000000000000000000000000000000000000000000000000
         run: |

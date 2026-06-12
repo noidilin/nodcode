@@ -1,5 +1,5 @@
 locals {
-  environment                = "staging"
+  environment                = "stage"
   project                    = "nodcode"
   owner                      = "noidilin"
   aws_region                 = "ap-northeast-1"
@@ -9,12 +9,12 @@ locals {
   name_prefix                = "devops-${local.project}-${local.environment}"
   units_path                 = find_in_parent_folders("catalog/units")
 
-  # Staging control-plane network.
+  # Stage control-plane network.
   vpc_cidr = "10.42.0.0/16"
   az_count = 2
 
   hosted_zone_name = "noidilin.dev"
-  api_domain       = "staging.nodcode.noidilin.dev"
+  api_domain       = "stage.nodcode.noidilin.dev"
 
   allowed_http_cidr_blocks      = ["0.0.0.0/0"]
   enable_http_to_https_redirect = true
@@ -35,7 +35,7 @@ locals {
   db_allocated_storage_gb = 20
   db_engine_version       = "16"
   db_multi_az             = false
-  # Staging is disposable to support cheap runtime teardown.
+  # Stage is disposable to support cheap runtime teardown.
   # Production must enable deletion protection and final snapshot/backup retention.
   db_deletion_protection = false
   db_skip_final_snapshot = true

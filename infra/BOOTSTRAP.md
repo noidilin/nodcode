@@ -1,6 +1,6 @@
 # Infrastructure bootstrap guide
 
-This guide explains how to bootstrap account-level shared infrastructure and then bootstrap each environment (`staging`, future `prod`) without mixing persistent resources with disposable runtime resources.
+This guide explains how to bootstrap account-level shared infrastructure and then bootstrap each environment (`stage`, future `prod`) without mixing persistent resources with disposable runtime resources.
 
 ## Resource boundaries
 
@@ -10,7 +10,7 @@ NodCode infrastructure has three ownership layers:
 | --- | --- | --- | --- |
 | Shared account bootstrap | `infra/live/shared` | Manual local AWS SSO | Long-lived; do not destroy during env teardown |
 | Environment bootstrap | `infra/live/<env>` bootstrap units | Manual local AWS SSO | Long-lived per environment |
-| Environment runtime | `infra/live/<env>` runtime units | CI/CD or manual validation | Disposable for staging; protected for prod |
+| Environment runtime | `infra/live/<env>` runtime units | CI/CD or manual validation | Disposable for stage; protected for prod |
 
 Shared bootstrap currently owns:
 
@@ -40,7 +40,7 @@ Before applying any stack:
 3. Confirm the sandbox permissions boundary exists in the target account: `lab-devops-permissions-boundary`.
 4. Confirm Route53 hosted zone and domain inputs are correct for the environment.
 5. Confirm Bedrock model access for the configured model/region.
-6. Create the matching GitHub Environment, e.g. `staging`, because apply/image-push OIDC roles trust `repo:noidilin/nodcode:environment:<env>`.
+6. Create the matching GitHub Environment, e.g. `stage`, because apply/image-push OIDC roles trust `repo:noidilin/nodcode:environment:<env>`.
 
 ## 1. Bootstrap shared account resources
 
@@ -60,14 +60,14 @@ Expected shared outputs:
 - `api-image-repository.repository_url`
 - `api-image-repository.repository_arn`
 
-Do not destroy `infra/live/shared` as part of staging/prod runtime teardown.
+Do not destroy `infra/live/shared` as part of stage/prod runtime teardown.
 
-## 2. Bootstrap staging persistent resources
+## 2. Bootstrap stage persistent resources
 
-Staging bootstrap creates deployment identity, the API runtime secret shell, and the API log group. These should survive `destroy-runtime.yml`.
+Stage bootstrap creates deployment identity, the API runtime secret shell, and the API log group. These should survive `destroy-runtime.yml`.
 
 ```sh
-cd infra/live/staging
+cd infra/live/stage
 terragrunt stack run init --non-interactive \
   --queue-include-dir '.terragrunt-stack/deployment-identity' \
   --queue-include-dir '.terragrunt-stack/api-env-bootstrap'
@@ -84,18 +84,18 @@ terragrunt stack run apply --non-interactive --tf-forward-stdout \
 Then write real API runtime secrets out-of-band:
 
 ```sh
-cp infra/secrets/staging.api-runtime.json.example infra/secrets/staging.api-runtime.json
-$EDITOR infra/secrets/staging.api-runtime.json
+cp infra/secrets/stage.api-runtime.json.example infra/secrets/stage.api-runtime.json
+$EDITOR infra/secrets/stage.api-runtime.json
 
 aws secretsmanager put-secret-value \
   --region ap-northeast-1 \
-  --secret-id devops-nodcode-staging/api-runtime \
-  --secret-string file://infra/secrets/staging.api-runtime.json
+  --secret-id devops-nodcode-stage/api-runtime \
+  --secret-string file://infra/secrets/stage.api-runtime.json
 ```
 
-Never commit `infra/secrets/staging.api-runtime.json`.
+Never commit `infra/secrets/stage.api-runtime.json`.
 
-## 3. Deploy staging runtime
+## 3. Deploy stage runtime
 
 Preferred path: push/merge to `main` and let `.github/workflows/deploy.yml` build the image, resolve the ECR digest, apply runtime, run migrations, and update the ECS service.
 
@@ -103,7 +103,7 @@ Manual validation path:
 
 ```sh
 export API_IMAGE_URI='549475122024.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:...'
-cd infra/live/staging
+cd infra/live/stage
 terragrunt stack run plan --non-interactive --tf-forward-stdout \
   --queue-include-dir '.terragrunt-stack/networking' \
   --queue-include-dir '.terragrunt-stack/database' \
@@ -119,7 +119,7 @@ terragrunt stack run apply --non-interactive --tf-forward-stdout \
   --queue-include-dir '.terragrunt-stack/api-service'
 ```
 
-Staging intentionally uses disposable database settings:
+Stage intentionally uses disposable database settings:
 
 ```hcl
 db_deletion_protection = false
@@ -128,15 +128,15 @@ db_skip_final_snapshot = true
 
 This is for cost-saving runtime teardown only. Do not copy this posture to production.
 
-## 4. Destroy staging runtime only
+## 4. Destroy stage runtime only
 
-Preferred path: run `.github/workflows/destroy-runtime.yml` and type `destroy-staging`.
+Preferred path: run `.github/workflows/destroy-runtime.yml` and type `destroy-stage`.
 
 Manual equivalent:
 
 ```sh
 export API_IMAGE_URI='549475122024.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:0000000000000000000000000000000000000000000000000000000000000000'
-cd infra/live/staging
+cd infra/live/stage
 terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-service'
 terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-taskdefs'
 terragrunt stack run destroy --non-interactive --tf-forward-stdout --queue-include-dir '.terragrunt-stack/api-platform'
@@ -148,17 +148,17 @@ Do not include these units in cheap runtime teardown:
 
 - `infra/live/shared/.terragrunt-stack/github-oidc-provider`
 - `infra/live/shared/.terragrunt-stack/api-image-repository`
-- `infra/live/staging/.terragrunt-stack/deployment-identity`
-- `infra/live/staging/.terragrunt-stack/api-env-bootstrap`
+- `infra/live/stage/.terragrunt-stack/deployment-identity`
+- `infra/live/stage/.terragrunt-stack/api-env-bootstrap`
 
 ## Adding a new environment, e.g. prod
 
-Create `infra/live/prod/terragrunt.stack.hcl` by copying `infra/live/staging/terragrunt.stack.hcl`, then change at least:
+Create `infra/live/prod/terragrunt.stack.hcl` by copying `infra/live/stage/terragrunt.stack.hcl`, then change at least:
 
 - `environment = "prod"`
 - `name_prefix = "devops-nodcode-prod"`
 - `api_domain`
-- VPC CIDR, if staging and prod share one AWS account/region.
+- VPC CIDR, if stage and prod share one AWS account/region.
 - `desired_count`, task sizing, DB sizing, and `db_multi_az`.
 - `github_repo` only if the repository changes.
 - GitHub Environment name: `prod`.

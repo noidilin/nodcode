@@ -22,11 +22,11 @@ concurrency:
 
 env:
   AWS_REGION: ap-northeast-1
-  PLAN_ROLE_ARN: arn:aws:iam::549475122024:role/devops-nodcode-staging-github-plan
+  PLAN_ROLE_ARN: arn:aws:iam::549475122024:role/devops-nodcode-stage-github-plan
   API_IMAGE_URI: 000000000000.dkr.ecr.ap-northeast-1.amazonaws.com/devops-nodcode-api@sha256:0000000000000000000000000000000000000000000000000000000000000000
 
 jobs:
-  staging-plan:
+  stage-plan:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -46,30 +46,30 @@ jobs:
         run: terragrunt hcl format --check --diff --working-dir infra
       - name: Terraform format
         run: find infra/catalog/modules -name "*.tf" -exec terraform fmt -check -diff {} \;
-      - name: Validate staging runtime
-        working-directory: infra/live/staging
+      - name: Validate stage runtime
+        working-directory: infra/live/stage
         run: |
           terragrunt stack run validate --non-interactive --tf-forward-stdout \
             --queue-exclude-dir '.terragrunt-stack/deployment-identity' \
             --queue-exclude-dir '.terragrunt-stack/api-env-bootstrap'
-      - name: Plan staging runtime
+      - name: Plan stage runtime
         id: plan
-        working-directory: infra/live/staging
+        working-directory: infra/live/stage
         run: |
           set +e
           terragrunt stack run plan --non-interactive --tf-forward-stdout \
             --queue-exclude-dir '.terragrunt-stack/deployment-identity' \
             --queue-exclude-dir '.terragrunt-stack/api-env-bootstrap' \
-            > "$RUNNER_TEMP/staging-plan.txt" 2>&1
+            > "$RUNNER_TEMP/stage-plan.txt" 2>&1
           status=$?
-          cat "$RUNNER_TEMP/staging-plan.txt"
+          cat "$RUNNER_TEMP/stage-plan.txt"
           echo "status=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
       - uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
-          name: staging-terraform-plan
-          path: ${{ runner.temp }}/staging-plan.txt
+          name: stage-terraform-plan
+          path: ${{ runner.temp }}/stage-plan.txt
           if-no-files-found: error
       - name: Sticky PR comment
         if: always()
@@ -77,12 +77,12 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const marker = '<!-- nodcode-terraform-plan:staging -->';
-            const plan = fs.existsSync(process.env.RUNNER_TEMP + '/staging-plan.txt')
-              ? fs.readFileSync(process.env.RUNNER_TEMP + '/staging-plan.txt', 'utf8')
+            const marker = '<!-- nodcode-terraform-plan:stage -->';
+            const plan = fs.existsSync(process.env.RUNNER_TEMP + '/stage-plan.txt')
+              ? fs.readFileSync(process.env.RUNNER_TEMP + '/stage-plan.txt', 'utf8')
               : 'Plan output was not produced.';
             const truncated = plan.length > 60000 ? plan.slice(-60000) : plan;
-            const body = `${marker}\n## Staging Terraform plan\n\nCommit: \`${context.sha}\`\n\nStatus: \`${{ steps.plan.outputs.status || 'not-run' }}\`\n\nFull plan is available as the \`staging-terraform-plan\` artifact.\n\n<details><summary>Plan output</summary>\n\n\`\`\`text\n${truncated}\n\`\`\`\n</details>`;
+            const body = `${marker}\n## Stage Terraform plan\n\nCommit: \`${context.sha}\`\n\nStatus: \`${{ steps.plan.outputs.status || 'not-run' }}\`\n\nFull plan is available as the \`stage-terraform-plan\` artifact.\n\n<details><summary>Plan output</summary>\n\n\`\`\`text\n${truncated}\n\`\`\`\n</details>`;
             const {owner, repo} = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.rest.issues.listComments({owner, repo, issue_number, per_page: 100});
