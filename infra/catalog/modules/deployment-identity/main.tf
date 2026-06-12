@@ -85,9 +85,15 @@ resource "aws_iam_role" "apply" {
 
 data "aws_iam_policy_document" "plan" {
   statement {
-    sid       = "ReadTerraformStateAndLocks"
+    sid       = "ReadTerraformState"
     actions   = ["s3:GetObject", "s3:ListBucket", "s3:GetBucketLocation"]
     resources = [var.terraform_state_bucket_arn, "${var.terraform_state_bucket_arn}/*"]
+  }
+
+  statement {
+    sid       = "ManageTerraformPlanLocks"
+    actions   = ["s3:PutObject", "s3:DeleteObject"]
+    resources = ["${var.terraform_state_bucket_arn}/*.tflock"]
   }
 
   statement {
