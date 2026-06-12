@@ -30,15 +30,15 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@v6.0.3
         with:
           persist-credentials: false
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+      - uses: hashicorp/setup-terraform@v4.0.1
       - name: Setup Terragrunt
         run: |
-          curl -fsSL -o /tmp/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v0.93.10/terragrunt_linux_amd64
+          curl -fsSL -o /tmp/terragrunt https://github.com/gruntwork-io/terragrunt/releases/download/v1.0.8/terragrunt_linux_amd64
           sudo install -m 0755 /tmp/terragrunt /usr/local/bin/terragrunt
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+      - uses: aws-actions/configure-aws-credentials@v6.2.0
         with:
           role-to-assume: ${{ env.PLAN_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -65,7 +65,7 @@ jobs:
           cat "$RUNNER_TEMP/staging-plan.txt"
           echo "status=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
           name: staging-terraform-plan
@@ -73,7 +73,7 @@ jobs:
           if-no-files-found: error
       - name: Sticky PR comment
         if: always()
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        uses: actions/github-script@v9.0.0
         with:
           script: |
             const fs = require('fs');
